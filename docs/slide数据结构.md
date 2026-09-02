@@ -1,0 +1,163 @@
+# Slide 数据结构
+
+> 版本 v1.0（已确认）
+
+## 1. 概述
+
+Slide 环节的内容拆分为两部分，分列存储、分阶段生成：
+
+| 存储列 | 内容 | 生成阶段 |
+|---|---|---|
+| `section.content` (jsonb) | 画布属性 + 页面元素（视觉内容）| 阶段一：生成元素 |
+| `section.steps` (jsonb) | 讲解步骤（旁白 + 高亮/划线/框选动作）| 阶段二：参考元素生成讲解 |
+
+- 元素采用**绝对坐标定位**（相对画布），前端等比缩放渲染。
+- 元素**一次性全部显示**，步骤仅做强调动作，不控制渐进出现。
+- 步骤动作支持**多动作数组**（可同时高亮多个元素）。
+
+## 2. `content` — 视觉内容
+
+```json
+{
+  "width": 1280,
+  "height": 720,
+  "background": "#ffffff",
+  "accent": "#14b8a6",
+  "elements": [ ... ]
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `width` | number | 是 | 画布宽 px，推荐 1280 |
+| `height` | number | 是 | 画布高 px，推荐 720（16:9）|
+| `background` | hex | 是 | 背景色 |
+| `accent` | hex | 是 | 强调色（高亮/划线/框选默认色、形状默认描边）|
+| `elements` | array | 是 | 页面元素，有序，后者覆盖前者（天然 z 序）|
+
+## 3. 页面元素（`elements[]`）
+
+公共字段：`id`（slide 内唯一字符串，供动作引用）、`x` / `y`（左上角坐标，相对画布）。
+
+### 3.1 text
+
+```json
+{ "id": "e1", "type": "text", "x": 80, "y": 60, "width": 1120,
+  "content": "数组是同类型元素的集合",
+  "style": { "fontSize": 28, "align": "left", "bold": false, "color": "#334155" } }
+```
+
+| 字段 | 说明 |
+|---|---|
+| `content` | 纯文本，支持 `\n` 换行（不做内联 markdown，粗体/斜体走 style）|
+| `width` | 换行宽度 px；`height` 自动 |
+| `style.fontSize` | 字号 px |
+| `style.align` | `left` \| `center` \| `right` |
+| `style.bold` | 加粗 |
+| `style.color` | 文字色 hex（可选）|
+
+### 3.2 formula
+
+```json
+{ "id": "e2", "type": "formula", "x": 80, "y": 220,
+  "content": "\\int_a^b f(x)\\,dx", "fontSize": 32 }
+```
+
+| 字段 | 说明 |
+|---|---|
+| `content` | KaTeX 源码字符串 |
+| `fontSize` | 字号 px |
+
+### 3.3 shape
+
+```json
+{ "id": "e3", "type": "shape", "x": 700, "y": 320, "width": 160, "height": 48,
+  "shape": "rect", "fill": "#e6fffa", "stroke": "#14b8a6", "label": "arr[0]" }
+```
+
+| 字段 | 说明 |
+|---|---|
+| `shape` | `rect` \| `circle` \| `line` \| `arrow` |
+| `width` / `height` | 尺寸 px（必填）|
+| `fill` | 填充色 hex |
+| `stroke` | 描边色 hex |
+| `label` | 图形内文字（可选）|
+
+### 3.4 list
+
+```json
+{ "id": "e4", "type": "list", "x": 80, "y": 320, "width": 500,
+  "ordered": true, "items": ["声明", "初始化", "访问"], "fontSize": 26 }
+```
+
+| 字段 | 说明 |
+|---|---|
+| `ordered` | 有序 `true` / 无序 `false` |
+| `items` | `string[]`，纯文本条目 |
+| `width` | 列表宽 px |
+| `fontSize` | 字号 px |
+
+## 4. `steps` — 讲解步骤
+
+```json
+[
+  { "text": "首先，数组是同类型元素的集合。",
+    "actions": [{ "type": "highlight", "targetElementId": "e1" }] },
+  { "text": "重点看第一个元素。",
+    "actions": [{ "type": "box", "targetElementId": "e3" }] }
+]
+```
+
+| 字段 | 说明 |
+|---|---|
+| `text` | 讲解旁白（底部老师栏逐字显示 + 可选 TTS）|
+| `actions` | 动作数组，可为空（纯旁白）|
+
+动作（`actions[]`）：
+
+| 字段 | 说明 |
+|---|---|
+| `type` | `underline` \| `highlight` \| `box` |
+| `targetElementId` | 引用 `elements[].id` |
+
+## 5. 完整示例
+
+```json
+{
+  "content": {
+    "width": 1280,
+    "height": 720,
+    "background": "#ffffff",
+    "accent": "#14b8a6",
+    "elements": [
+      { "id": "e1", "type": "text", "x": 80, "y": 60, "width": 1120,
+        "content": "一维数组的声明与初始化",
+        "style": { "fontSize": 40, "align": "left", "bold": true, "color": "#0f172a" } },
+      { "id": "e2", "type": "text", "x": 80, "y": 140, "width": 800,
+        "content": "数组是同类型元素的有序集合",
+        "style": { "fontSize": 28, "align": "left", "color": "#334155" } },
+      { "id": "e3", "type": "formula", "x": 80, "y": 220,
+        "content": "\\text{int arr[5] = \\{1,2,3,4,5\\};}", "fontSize": 32 },
+      { "id": "e4", "type": "list", "x": 80, "y": 320, "width": 500,
+        "ordered": true, "items": ["声明", "初始化", "访问"], "fontSize": 26 },
+      { "id": "e5", "type": "shape", "x": 700, "y": 320, "width": 160, "height": 48,
+        "shape": "rect", "fill": "#e6fffa", "stroke": "#14b8a6", "label": "arr[0]" }
+    ]
+  },
+  "steps": [
+    { "text": "首先，数组是同类型元素的集合。",
+      "actions": [{ "type": "highlight", "targetElementId": "e2" }] },
+    { "text": "声明语法如下。",
+      "actions": [{ "type": "underline", "targetElementId": "e3" }] },
+    { "text": "重点看第一个元素。",
+      "actions": [{ "type": "box", "targetElementId": "e5" }] }
+  ]
+}
+```
+
+## 6. 关键约定
+
+- **无独立 `title` 字段**：slide 视觉标题即一个 `fontSize` 较大的 `text` 元素；环节标题已存于 `section.title`，二者不重复。
+- **画布缩放**：前端按 `width/height` 比例 `object-fit: contain` 缩放，坐标换算为百分比渲染，支持响应式。
+- **z 序**：`elements` 数组顺序即叠放顺序，靠后者在上。
+- **两阶段生成**：先产出 `content`（元素），智能体再参考元素产出 `steps`（讲解），稳定性更高。
