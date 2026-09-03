@@ -1,31 +1,57 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NInput, NUpload, useMessage } from 'naive-ui'
-import type { UploadFileInfo } from 'naive-ui'
-import { RocketOutline } from '@vicons/ionicons5'
+import { NButton, NIcon, NInput, NSelect, NTooltip, NUpload, useMessage } from 'naive-ui'
+import type { SelectOption, UploadFileInfo } from 'naive-ui'
+import { RocketOutline, AttachOutline } from '@vicons/ionicons5'
 
-import { createCourse } from '@/api/course'
+import { Thinking, type ThinkingValue, createCourse } from '@/api/course'
+import { useModelConfigStore } from '@/stores/model-config'
 
 const router = useRouter()
 const message = useMessage()
+const modelConfigStore = useModelConfigStore()
 
 const prompt = ref('')
 const files = ref<UploadFileInfo[]>([])
 const submitting = ref(false)
 
+/** 选中的模型配置；空串表示使用默认模型（不随课程绑定专属配置） */
+const modelConfigId = ref('')
+const thinking = ref<ThinkingValue>(Thinking.Default)
+
 const ALLOWED_EXTS = ['.txt', '.md', '.markdown']
+
+const modelOptions = computed<SelectOption[]>(() => {
+  const label = modelConfigStore.defaultConfig
+    ? `默认 · ${modelConfigStore.defaultConfig.model}`
+    : '服务端默认模型'
+  const opts: SelectOption[] = [{ label, value: '' }]
+  for (const c of modelConfigStore.configs) {
+    opts.push({ label: `${c.model}（${c.provider}）`, value: c.id })
+  }
+  return opts
+})
+
+const thinkingOptions: SelectOption[] = [
+  { label: '关闭思考', value: Thinking.Off },
+  { label: '默认', value: Thinking.Default },
+  { label: '最大化思考', value: Thinking.Max },
+]
 
 function isAllowed(name: string): boolean {
   const lower = name.toLowerCase()
   return ALLOWED_EXTS.some((ext) => lower.endsWith(ext))
 }
 
+function handleModelChange(value: string | number | null) {
+  modelConfigId.value = value ? String(value) : ''
+}
+
 function handleFileChange({ file, fileList }: { file: UploadFileInfo; fileList: UploadFileInfo[] }) {
   const f = file.file
   if (f && !isAllowed(f.name)) {
     message.error('参考文档仅支持 txt / md 格式')
-    // 移除非法项
     files.value = fileList.filter((i) => i.id !== file.id)
     return
   }
@@ -35,6 +61,10 @@ function handleFileChange({ file, fileList }: { file: UploadFileInfo; fileList: 
     return
   }
   files.value = fileList
+}
+
+function removeFile(id: string) {
+  files.value = files.value.filter((i) => i.id !== id)
 }
 
 async function handleSubmit() {
@@ -48,7 +78,10 @@ async function handleSubmit() {
 
   submitting.value = true
   try {
-    const course = await createCourse(prompt.value.trim(), rawFiles)
+    const course = await createCourse(prompt.value.trim(), rawFiles, {
+      modelConfigId: modelConfigId.value || undefined,
+      thinking: thinking.value,
+    })
     message.success('课程已创建，正在生成大纲…')
     router.push(`/preview/${course.id}`)
   } catch (e) {
@@ -57,46 +90,89 @@ async function handleSubmit() {
     submitting.value = false
   }
 }
+
+onMounted(() => {
+  modelConfigStore.ensureLoaded()
+})
 </script>
 
 <template>
   <div class="create-view">
-    <div class="create-view__card">
-      <header class="create-view__head">
-        <h1 class="create-view__title">AGENT-C</h1>
-        <p class="create-view__subtitle">描述你想学习的内容，AI 将生成可互动课程</p>
-      </header>
+    <header class="create-view__head">
+      <h1 class="create-view__title">AGENT-C</h1>
+      <p class="create-view__subtitle">描述你想学习的内容，AI 将生成可互动课程</p>
+    </header>
 
-      <div class="create-view__prompt">
-        <label class="create-view__label" for="course-prompt">课程内容要求</label>
-        <n-input
-          id="course-prompt"
-          v-model:value="prompt"
-          type="textarea"
-          placeholder="例如：系统讲解一维数组的声明、初始化、遍历与常见操作，帮助零基础学习者建立编程直觉。"
-          :autosize="{ minRows: 4, maxRows: 8 }"
+    <div class="create-view__composer">
+      <n-input
+        v-model:value="prompt"
+        type="textarea"
+        :bordered="false"
+        class="create-view__textarea"
+        placeholder="描述你想学习的课程内容，例如：系统讲解一维数组的声明、初始化、遍历与常见操作，帮助零基础学习者建立编程直觉。"
+        :autosize="{ minRows: 5, maxRows: 12 }"
+        :disabled="submitting"
+        maxlength="2000"
+      />
+
+      <div class="create-view__files">
+        <n-tag
+          v-for="f in files"
+          :key="f.id"
+          size="small"
+          closable
+          :bordered="false"
           :disabled="submitting"
-          maxlength="2000"
-          show-count
-        />
-      </div>
-
-      <div class="create-view__upload">
-        <span class="create-view__label">参考文档（txt / md，可选）</span>
-        <n-upload
-          accept=".txt,.md,.markdown,text/plain,text/markdown"
-          :default-upload="false"
-          multiple
-          :max="8"
-          :file-list="files"
-          @update:file-list="files = $event"
-          @change="handleFileChange"
+          @close="removeFile(f.id)"
         >
-          <n-button :disabled="submitting">选择文档</n-button>
-        </n-upload>
+          {{ f.name }}
+        </n-tag>
       </div>
 
-      <div class="create-view__actions">
+      <div class="create-view__toolbar">
+        <div class="create-view__tools">
+          <n-select
+            :value="modelConfigId"
+            :options="modelOptions"
+            size="small"
+            class="create-view__tool create-view__tool--model"
+            :disabled="submitting"
+            placeholder="模型"
+            @update:value="handleModelChange"
+          />
+          <n-select
+            :value="thinking"
+            :options="thinkingOptions"
+            size="small"
+            class="create-view__tool create-view__tool--thinking"
+            :disabled="submitting"
+            placeholder="思考"
+            @update:value="thinking = $event as ThinkingValue"
+          />
+          <n-tooltip placement="top">
+            <template #trigger>
+              <n-upload
+                accept=".txt,.md,.markdown,text/plain,text/markdown"
+                :default-upload="false"
+                multiple
+                :max="8"
+                :show-file-list="false"
+                :file-list="files"
+                :disabled="submitting"
+                @update:file-list="files = $event"
+                @change="handleFileChange"
+              >
+                <n-button quaternary circle :disabled="submitting" aria-label="上传参考文档">
+                  <template #icon>
+                    <n-icon size="18"><AttachOutline /></n-icon>
+                  </template>
+                </n-button>
+              </n-upload>
+            </template>
+            上传参考文档（txt / md）
+          </n-tooltip>
+        </div>
+
         <n-button
           type="primary"
           size="large"
@@ -108,32 +184,27 @@ async function handleSubmit() {
           生成课程
         </n-button>
       </div>
+
+      <p v-if="!modelConfigStore.hasConfig" class="create-view__hint">
+        尚未添加模型配置，将使用服务端默认模型
+      </p>
     </div>
   </div>
 </template>
 
 <style scoped>
 .create-view {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 32px;
-  overflow-y: auto;
-}
-
-.create-view__card {
   width: 100%;
-  max-width: 560px;
-  padding: 28px;
-  border: 1px solid var(--app-divider, #e2e8f0);
-  border-radius: 12px;
-  background: var(--app-card-bg, #ffffff);
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 32px 20px;
+  display: flex;
+  flex-direction: column;
 }
 
 .create-view__head {
   text-align: center;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .create-view__title {
@@ -152,25 +223,67 @@ async function handleSubmit() {
   color: var(--app-text-2, #64748b);
 }
 
-.create-view__label {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 13px;
-  font-weight: 600;
+.create-view__composer {
+  border: 1px solid var(--app-divider, #e2e8f0);
+  border-radius: 16px;
+  background: var(--app-card-bg, #ffffff);
+  padding: 12px 12px 10px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.create-view__composer:focus-within {
+  border-color: var(--app-primary, #14b8a6);
+  box-shadow: 0 0 0 1px var(--app-primary, #14b8a6);
+}
+
+.create-view__textarea :deep(.n-input-wrapper) {
+  background: transparent;
+}
+
+.create-view__textarea :deep(.n-input__textarea) {
+  font-size: 15px;
+  line-height: 1.7;
   color: var(--app-text-1, #0f172a);
 }
 
-.create-view__prompt,
-.create-view__upload {
-  margin-bottom: 18px;
+.create-view__files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 2px 10px;
 }
 
-.create-view__actions {
+.create-view__toolbar {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--app-divider, #e2e8f0);
+  padding-top: 10px;
+}
+
+.create-view__tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.create-view__tool--model {
+  width: 170px;
+}
+
+.create-view__tool--thinking {
+  width: 120px;
 }
 
 .create-view__submit {
-  min-width: 160px;
+  flex-shrink: 0;
+}
+
+.create-view__hint {
+  margin: 8px 2px 0;
+  font-size: 12px;
+  color: var(--app-text-2, #64748b);
 }
 </style>

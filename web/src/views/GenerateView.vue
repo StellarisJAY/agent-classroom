@@ -25,15 +25,11 @@ watch(
   { immediate: true },
 )
 
-function moveSection(index: number, delta: number) {
-  const target = index + delta
-  if (target < 0 || target >= editable.value.length) return
-  const [item] = editable.value.splice(index, 1)
-  editable.value.splice(target, 0, item!)
-}
-
-function removeSection(index: number) {
-  editable.value.splice(index, 1)
+function reorderSection(from: number, to: number) {
+  const list = editable.value
+  if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return
+  const [item] = list.splice(from, 1)
+  list.splice(to, 0, item!)
 }
 
 function retry() {
@@ -72,12 +68,9 @@ onMounted(() => {
       <OutlineList
         v-if="editable.length"
         :sections="editable"
-        reorderable
-        @move-up="(i) => moveSection(i, -1)"
-        @move-down="(i) => moveSection(i, 1)"
-        @remove="removeSection"
+        @move="reorderSection"
       />
-      <p class="generate-view__note">大纲已生成。调整位置或删除环节仅影响当前预览，暂未保存。</p>
+      <p class="generate-view__note">大纲已生成。拖拽可调整环节顺序（暂未保存）。</p>
     </div>
 
     <!-- 错误/未开始 -->

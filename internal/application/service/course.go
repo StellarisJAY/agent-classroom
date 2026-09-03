@@ -143,11 +143,13 @@ func (s *CourseService) Create(ctx context.Context, userID types.ID, req *types.
 	}
 
 	course := &types.Course{
-		OwnerID:  userID,
-		Title:    "",
-		Prompt:   prompt,
-		Status:   types.CourseStatusDraft,
-		CreateBy: &userID,
+		OwnerID:       userID,
+		Title:         "",
+		Prompt:        prompt,
+		Status:        types.CourseStatusDraft,
+		ModelConfigID: req.ModelConfigID,
+		Thinking:      normalizeThinking(req.Thinking),
+		CreateBy:      &userID,
 	}
 
 	err := s.tm.Transaction(ctx, func(ctx context.Context) error {
@@ -203,7 +205,12 @@ func (s *CourseService) GenerateOutline(ctx context.Context, userID, courseID ty
 		return nil, err
 	}
 
-	cfg, err := s.modelCfgSvc.ResolveDefault(ctx, userID)
+	var cfg model.ProviderConfig
+	if course.ModelConfigID != nil && *course.ModelConfigID != types.NilID {
+		cfg, err = s.modelCfgSvc.ResolveByID(ctx, userID, *course.ModelConfigID)
+	} else {
+		cfg, err = s.modelCfgSvc.ResolveDefault(ctx, userID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -225,6 +232,7 @@ func (s *CourseService) GenerateOutline(ctx context.Context, userID, courseID ty
 		Messages:    messages,
 		Temperature: &temp,
 		MaxTokens:   &maxTokens,
+		Thinking:    course.Thinking,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("generate outline: %w", err)
@@ -399,4 +407,14 @@ func keywordOf(req *types.CourseListReq) string {
 		return ""
 	}
 	return req.Keyword
+}
+
+// normalizeThinking 归一化思考限制取值；空或非法一律回退为 default。
+func normalizeThinking(v string) string {
+	switch v {
+	case model.ThinkingOff, model.ThinkingDefault, model.ThinkingMax:
+		return v
+	default:
+		return model.ThinkingDefault
+	}
 }

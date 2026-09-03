@@ -21,11 +21,22 @@ var _ model.LLMClient = (*openaiClient)(nil)
 
 // chatCompletionRequest 对齐 OpenAI Chat Completions 请求体。
 type chatCompletionRequest struct {
-	Model       string              `json:"model"`
-	Messages    []model.ChatMessage `json:"messages"`
-	Stream      bool                `json:"stream"`
-	Temperature *float64            `json:"temperature,omitempty"`
-	MaxTokens   *int                `json:"max_tokens,omitempty"`
+	Model           string              `json:"model"`
+	Messages        []model.ChatMessage `json:"messages"`
+	Stream          bool                `json:"stream"`
+	Temperature     *float64            `json:"temperature,omitempty"`
+	MaxTokens       *int                `json:"max_tokens,omitempty"`
+	ReasoningEffort *string             `json:"reasoning_effort,omitempty"`
+}
+
+// reasoningEffort 将 model.Thinking 映射为 OpenAI reasoning_effort。
+// max → high；off / default / 空 不传（交由模型默认或非推理路径）。
+func reasoningEffort(thinking string) *string {
+	if thinking == model.ThinkingMax {
+		e := "high"
+		return &e
+	}
+	return nil
 }
 
 // chatCompletionResponse 非流式响应。
@@ -51,11 +62,12 @@ type chatCompletionChunk struct {
 
 func (c *openaiClient) Chat(ctx context.Context, req model.ChatRequest) (*model.ChatResponse, error) {
 	payload := chatCompletionRequest{
-		Model:       c.cfg.Model,
-		Messages:    req.Messages,
-		Stream:      false,
-		Temperature: req.Temperature,
-		MaxTokens:   req.MaxTokens,
+		Model:           c.cfg.Model,
+		Messages:        req.Messages,
+		Stream:          false,
+		Temperature:     req.Temperature,
+		MaxTokens:       req.MaxTokens,
+		ReasoningEffort: reasoningEffort(req.Thinking),
 	}
 	resp, err := c.do(ctx, payload)
 	if err != nil {
@@ -82,11 +94,12 @@ func (c *openaiClient) Chat(ctx context.Context, req model.ChatRequest) (*model.
 
 func (c *openaiClient) ChatStream(ctx context.Context, req model.ChatRequest, onDelta model.StreamCallback) error {
 	payload := chatCompletionRequest{
-		Model:       c.cfg.Model,
-		Messages:    req.Messages,
-		Stream:      true,
-		Temperature: req.Temperature,
-		MaxTokens:   req.MaxTokens,
+		Model:           c.cfg.Model,
+		Messages:        req.Messages,
+		Stream:          true,
+		Temperature:     req.Temperature,
+		MaxTokens:       req.MaxTokens,
+		ReasoningEffort: reasoningEffort(req.Thinking),
 	}
 	resp, err := c.do(ctx, payload)
 	if err != nil {

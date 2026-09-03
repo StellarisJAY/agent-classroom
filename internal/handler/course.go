@@ -54,10 +54,20 @@ func (h *CourseHandler) Create(c *gin.Context) {
 		Error(c, err)
 		return
 	}
-	resp, err := h.svc.Create(c.Request.Context(), userID, &types.CreateCourseReq{
-		Prompt: prompt,
-		Files:  files,
-	})
+	req := &types.CreateCourseReq{
+		Prompt:   prompt,
+		Files:    files,
+		Thinking: c.PostForm("thinking"),
+	}
+	if raw := c.PostForm("model_config_id"); raw != "" {
+		id, perr := types.ParseID(raw)
+		if perr != nil {
+			Error(c, types.NewError(types.CodeBadRequest, "model_config_id 不合法"))
+			return
+		}
+		req.ModelConfigID = &id
+	}
+	resp, err := h.svc.Create(c.Request.Context(), userID, req)
 	if err != nil {
 		Error(c, err)
 		return

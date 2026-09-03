@@ -52,15 +52,17 @@ func ensureEnum(db *gorm.DB, name string, values ...string) error {
 func migrateCourseSchema(db *gorm.DB) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS course (
-			id          uuid PRIMARY KEY,
-			owner_id    uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			title       text NOT NULL DEFAULT '',
-			prompt      text NOT NULL DEFAULT '',
-			status      course_status NOT NULL DEFAULT 'draft',
-			is_public   boolean NOT NULL DEFAULT false,
-			create_by   uuid REFERENCES users(id) ON DELETE SET NULL,
-			create_at   timestamptz NOT NULL DEFAULT now(),
-			update_at   timestamptz NOT NULL DEFAULT now()
+			id              uuid PRIMARY KEY,
+			owner_id        uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			title           text NOT NULL DEFAULT '',
+			prompt          text NOT NULL DEFAULT '',
+			status          course_status NOT NULL DEFAULT 'draft',
+			is_public       boolean NOT NULL DEFAULT false,
+			model_config_id uuid REFERENCES user_model_config(id) ON DELETE SET NULL,
+			thinking        text NOT NULL DEFAULT 'default',
+			create_by       uuid REFERENCES users(id) ON DELETE SET NULL,
+			create_at       timestamptz NOT NULL DEFAULT now(),
+			update_at       timestamptz NOT NULL DEFAULT now()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_course_owner ON course (owner_id)`,
 		`CREATE TABLE IF NOT EXISTS progress (
@@ -105,6 +107,12 @@ func migrateCourseSchema(db *gorm.DB) error {
 	}
 	if err := db.Exec(`ALTER TABLE course DROP COLUMN IF EXISTS description`).Error; err != nil {
 		return fmt.Errorf("migrate course drop description: %w", err)
+	}
+	if err := db.Exec(`ALTER TABLE course ADD COLUMN IF NOT EXISTS model_config_id uuid REFERENCES user_model_config(id) ON DELETE SET NULL`).Error; err != nil {
+		return fmt.Errorf("migrate course add model_config_id: %w", err)
+	}
+	if err := db.Exec(`ALTER TABLE course ADD COLUMN IF NOT EXISTS thinking text NOT NULL DEFAULT 'default'`).Error; err != nil {
+		return fmt.Errorf("migrate course add thinking: %w", err)
 	}
 	return nil
 }

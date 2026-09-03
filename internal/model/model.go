@@ -28,11 +28,20 @@ type ProviderConfig struct {
 	APIKey   string
 }
 
+// 思考强度（reasoning effort）取值。空串等价于 default。
+const (
+	ThinkingOff     = "off"
+	ThinkingDefault = "default"
+	ThinkingMax     = "max"
+)
+
 // ChatRequest 一次对话请求
 type ChatRequest struct {
 	Messages    []ChatMessage
 	Temperature *float64 // 可选
 	MaxTokens   *int     // 可选
+	// Thinking 思考限制：off / default / max（空串视为 default）。是否真正下发由各 provider 适配。
+	Thinking string
 }
 
 // ChatResponse 非流式对话结果

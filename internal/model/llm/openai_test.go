@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -74,6 +75,47 @@ func TestChatStreamInterrupt(t *testing.T) {
 	})
 	require.ErrorIs(t, err, context.Canceled)
 	require.Equal(t, 1, count, "回调返回错误后应立即中断")
+}
+
+func ptr[T any](v T) *T { return &v }
+
+func TestReasoningEffort(t *testing.T) {
+	cases := []struct {
+		thinking string
+		want     *string
+	}{
+		{model.ThinkingMax, ptr("high")},
+		{model.ThinkingOff, nil},
+		{model.ThinkingDefault, nil},
+		{"", nil},
+	}
+	for _, c := range cases {
+		got := reasoningEffort(c.thinking)
+		if c.want == nil {
+			require.Nil(t, got)
+		} else {
+			require.NotNil(t, got)
+			require.Equal(t, *c.want, *got)
+		}
+	}
+}
+
+func TestChatSendsReasoningEffort(t *testing.T) {
+	var got struct {
+		ReasoningEffort *string `json:"reasoning_effort"`
+	}
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	})
+	_, err := client.Chat(context.Background(), model.ChatRequest{
+		Messages: []model.ChatMessage{{Role: model.RoleUser, Content: "hi"}},
+		Thinking: model.ThinkingMax,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, got.ReasoningEffort)
+	require.Equal(t, "high", *got.ReasoningEffort)
 }
 
 func TestChatUpstreamError(t *testing.T) {

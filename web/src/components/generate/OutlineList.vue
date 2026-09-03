@@ -1,23 +1,26 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import type { TagProps } from 'naive-ui'
-import { NButton, NIcon, NTag } from 'naive-ui'
-import { ArrowDownOutline, ArrowUpOutline, TrashOutline } from '@vicons/ionicons5'
+import { NIcon, NTag } from 'naive-ui'
+import { MenuOutline } from '@vicons/ionicons5'
 
 import { SectionType, type OutlineSection } from '@/api/course'
 
 const props = defineProps<{
   sections: OutlineSection[]
-  /** 只读：隐藏操作按钮（如生成中流式阶段） */
+  /** 只读：不可拖拽换序（如生成中流式阶段） */
   readonly?: boolean
-  /** 列表是否有换序能力（首尾隐藏上/下移） */
-  reorderable?: boolean
 }>()
 
 const emit = defineEmits<{
-  moveUp: [index: number]
-  moveDown: [index: number]
-  remove: [index: number]
+  /** 从 from 移到 to */
+  move: [from: number, to: number]
 }>()
+
+/** 当前正在拖拽的起始索引 */
+const dragIndex = ref<number | null>(null)
+/** 当前高亮的放置目标索引 */
+const overIndex = ref<number | null>(null)
 
 const sectionTypeMeta: Record<string, { label: string; type: TagProps['type'] }> = {
   [SectionType.Slide]: { label: '讲解', type: 'info' },
@@ -28,6 +31,35 @@ const sectionTypeMeta: Record<string, { label: string; type: TagProps['type'] }>
 function typeMeta(section: OutlineSection) {
   return sectionTypeMeta[section.type] ?? { label: section.type, type: 'default' }
 }
+
+function onDragStart(idx: number, event: DragEvent) {
+  if (props.readonly) return
+  dragIndex.value = idx
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', String(idx))
+  }
+}
+
+function onDragOver(idx: number, event: DragEvent) {
+  if (props.readonly || dragIndex.value === null) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  overIndex.value = idx
+}
+
+function onDrop(idx: number) {
+  if (dragIndex.value !== null && dragIndex.value !== idx) {
+    emit('move', dragIndex.value, idx)
+  }
+  dragIndex.value = null
+  overIndex.value = null
+}
+
+function onDragEnd() {
+  dragIndex.value = null
+  overIndex.value = null
+}
 </script>
 
 <template>
@@ -36,6 +68,16 @@ function typeMeta(section: OutlineSection) {
       v-for="(s, idx) in props.sections"
       :key="idx"
       class="outline-list__item"
+      :class="{
+        'outline-list__item--dragging': dragIndex === idx,
+        'outline-list__item--over': overIndex === idx && dragIndex !== idx,
+        'outline-list__item--draggable': !readonly,
+      }"
+      :draggable="!readonly"
+      @dragstart="onDragStart(idx, $event)"
+      @dragover="onDragOver(idx, $event)"
+      @drop="onDrop(idx)"
+      @dragend="onDragEnd"
     >
       <div class="outline-list__body">
         <div class="outline-list__row">
@@ -50,34 +92,8 @@ function typeMeta(section: OutlineSection) {
         </p>
       </div>
 
-      <div v-if="!readonly" class="outline-list__actions">
-        <n-button
-          size="tiny"
-          quaternary
-          :disabled="!reorderable || idx === 0"
-          title="上移"
-          @click="emit('moveUp', idx)"
-        >
-          <template #icon>
-            <n-icon><ArrowUpOutline /></n-icon>
-          </template>
-        </n-button>
-        <n-button
-          size="tiny"
-          quaternary
-          :disabled="!reorderable || idx === props.sections.length - 1"
-          title="下移"
-          @click="emit('moveDown', idx)"
-        >
-          <template #icon>
-            <n-icon><ArrowDownOutline /></n-icon>
-          </template>
-        </n-button>
-        <n-button size="tiny" quaternary type="error" title="删除" @click="emit('remove', idx)">
-          <template #icon>
-            <n-icon><TrashOutline /></n-icon>
-          </template>
-        </n-button>
+      <div v-if="!readonly" class="outline-list__actions" title="拖拽调整顺序">
+        <n-icon class="outline-list__grip"><MenuOutline /></n-icon>
       </div>
     </li>
   </ol>
@@ -102,6 +118,24 @@ function typeMeta(section: OutlineSection) {
   border-radius: 8px;
   background: var(--app-card-bg, #ffffff);
   animation: fade-in 0.3s ease;
+  transition: opacity 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.outline-list__item--draggable {
+  cursor: grab;
+}
+
+.outline-list__item--draggable:active {
+  cursor: grabbing;
+}
+
+.outline-list__item--dragging {
+  opacity: 0.45;
+}
+
+.outline-list__item--over {
+  border-color: var(--app-primary, #14b8a6);
+  box-shadow: 0 0 0 1px var(--app-primary, #14b8a6) inset;
 }
 
 .outline-list__body {
@@ -157,7 +191,12 @@ function typeMeta(section: OutlineSection) {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 2px;
+  color: var(--app-text-3, #94a3b8);
+}
+
+.outline-list__grip {
+  font-size: 18px;
+  pointer-events: none;
 }
 
 @keyframes fade-in {

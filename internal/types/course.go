@@ -38,12 +38,16 @@ const (
 // Title 由大纲生成时 LLM 产出（创建 draft 时为空）；Prompt 为用户输入的课程内容要求，
 // 是大纲生成的唯一提示词依据（参考文档提取文本不入库，仅生成流程临时读取）。
 type Course struct {
-	ID       ID        `gorm:"type:uuid;primaryKey" json:"id"`
-	OwnerID  ID        `gorm:"type:uuid;not null" json:"-"`
-	Title    string    `gorm:"not null;default:''" json:"title"`
-	Prompt   string    `gorm:"not null" json:"prompt"`
-	Status   string    `gorm:"type:course_status;not null;default:draft" json:"status"`
-	IsPublic bool      `gorm:"not null;default:false" json:"is_public"`
+	ID       ID     `gorm:"type:uuid;primaryKey" json:"id"`
+	OwnerID  ID     `gorm:"type:uuid;not null" json:"-"`
+	Title    string `gorm:"not null;default:''" json:"title"`
+	Prompt   string `gorm:"not null" json:"prompt"`
+	Status   string `gorm:"type:course_status;not null;default:draft" json:"status"`
+	IsPublic bool   `gorm:"not null;default:false" json:"is_public"`
+	// ModelConfigID 该课程使用哪份模型配置；为空则大纲生成时回退默认配置。
+	ModelConfigID *ID `gorm:"type:uuid" json:"model_config_id"`
+	// Thinking 生成所用模型的思考限制：off / default / max。
+	Thinking string    `gorm:"not null;default:default" json:"thinking"`
 	CreateBy *ID       `gorm:"type:uuid" json:"-"`
 	CreateAt time.Time `gorm:"not null;default:now()" json:"-"`
 	UpdateAt time.Time `gorm:"not null;default:now()" json:"-"`
@@ -126,6 +130,10 @@ type CreateCourseReq struct {
 	Prompt string
 	// Files 上传的参考文档（早期仅 .txt/.md，文本提取后不落库）
 	Files []UploadedFile
+	// ModelConfigID 选择的用户模型配置；为空则生成时用默认配置。
+	ModelConfigID *ID
+	// Thinking 模型思考限制：off / default / max。
+	Thinking string
 }
 
 // UploadedFile 一个已读入内存的上传文档。Name 为原始文件名（含扩展名），Data 为文件内容。

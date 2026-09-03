@@ -96,11 +96,31 @@ export function listCourses(query: CourseListQuery): Promise<CourseListResult> {
   return request<CourseListResult>({ url: '/courses', method: 'get', params: query })
 }
 
+/** 思考限制档位（reasoning effort）。与后端 model.Thinking 对齐。 */
+export const Thinking = {
+  Off: 'off',
+  Default: 'default',
+  Max: 'max',
+} as const
+export type ThinkingValue = (typeof Thinking)[keyof typeof Thinking]
+
+/** 创建课程的模型/思考选项 */
+export interface CourseGenOptions {
+  modelConfigId?: string
+  thinking?: ThinkingValue
+}
+
 /** 创建草稿课程（multipart：prompt + files[]，参考文档仅 txt/md） */
-export function createCourse(prompt: string, files: File[]): Promise<CourseCreateResult> {
+export function createCourse(
+  prompt: string,
+  files: File[],
+  opts?: CourseGenOptions,
+): Promise<CourseCreateResult> {
   const form = new FormData()
   form.append('prompt', prompt)
   files.forEach((f) => form.append('files', f))
+  if (opts?.modelConfigId) form.append('model_config_id', opts.modelConfigId)
+  if (opts?.thinking) form.append('thinking', opts.thinking)
   return request<CourseCreateResult>({ url: '/courses', method: 'post', data: form })
 }
 
