@@ -16,7 +16,7 @@ import (
 )
 
 // Register 挂载全局中间件并注册路由分组。
-func Register(e *gin.Engine, cfg *config.Config, logger *slog.Logger, auth *handler.AuthHandler, modelConfig *handler.ModelConfigHandler, course *handler.CourseHandler, storage types.Storage) {
+func Register(e *gin.Engine, cfg *config.Config, logger *slog.Logger, auth *handler.AuthHandler, modelConfig *handler.ModelConfigHandler, course *handler.CourseHandler, section *handler.SectionHandler, storage types.Storage) {
 	// 全局中间件
 	e.Use(
 		middleware.Recovery(logger),
@@ -34,11 +34,11 @@ func Register(e *gin.Engine, cfg *config.Config, logger *slog.Logger, auth *hand
 
 	// API 根分组
 	api := e.Group("/api")
-	registerAPI(api, cfg, auth, modelConfig, course)
+	registerAPI(api, cfg, auth, modelConfig, course, section)
 }
 
 // registerAPI 集中注册所有业务路由分组。
-func registerAPI(api *gin.RouterGroup, cfg *config.Config, auth *handler.AuthHandler, modelConfig *handler.ModelConfigHandler, course *handler.CourseHandler) {
+func registerAPI(api *gin.RouterGroup, cfg *config.Config, auth *handler.AuthHandler, modelConfig *handler.ModelConfigHandler, course *handler.CourseHandler, section *handler.SectionHandler) {
 	authGroup := api.Group("/auth")
 	{
 		authGroup.POST("/register", auth.Register)
@@ -61,6 +61,9 @@ func registerAPI(api *gin.RouterGroup, cfg *config.Config, auth *handler.AuthHan
 		courseGroup.POST("", course.Create)
 		courseGroup.GET("/:id/outline", course.GetOutline)
 		courseGroup.GET("/:id/outline/generate", course.GenerateOutline)
+		courseGroup.POST("/:id/outline/confirm", section.Confirm)
+		courseGroup.GET("/:id/sections", section.List)
+		courseGroup.GET("/:id/generate", section.Generate)
 	}
 }
 

@@ -182,6 +182,8 @@ type CourseRepo interface {
 	GetByID(ctx context.Context, ownerID, id ID) (*Course, error)
 	// UpdateTitle 更新课程标题（大纲生成后回填）。
 	UpdateTitle(ctx context.Context, id ID, title string) error
+	// UpdateStatus 更新课程状态。
+	UpdateStatus(ctx context.Context, id ID, status string) error
 }
 
 // CourseService 课程业务接口。

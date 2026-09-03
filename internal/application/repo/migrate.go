@@ -27,8 +27,19 @@ func Migrate(db *gorm.DB) error {
 		types.ProgressStatusUnstarted, types.ProgressStatusInProgress, types.ProgressStatusCompleted); err != nil {
 		return err
 	}
+	if err := ensureEnum(db, "section_type",
+		types.SectionTypeSlide, types.SectionTypeQuiz, types.SectionTypeDemo); err != nil {
+		return err
+	}
+	if err := ensureEnum(db, "section_status",
+		types.SectionStatusPending, types.SectionStatusGenerating, types.SectionStatusDone); err != nil {
+		return err
+	}
 
-	return migrateCourseSchema(db)
+	if err := migrateCourseSchema(db); err != nil {
+		return err
+	}
+	return migrateSectionSchema(db)
 }
 
 // ensureEnum 幂等创建 PostgreSQL ENUM 类型。
@@ -113,6 +124,35 @@ func migrateCourseSchema(db *gorm.DB) error {
 	}
 	if err := db.Exec(`ALTER TABLE course ADD COLUMN IF NOT EXISTS thinking text NOT NULL DEFAULT 'default'`).Error; err != nil {
 		return fmt.Errorf("migrate course add thinking: %w", err)
+	}
+	return nil
+}
+
+// migrateSectionSchema 创建 section 表（question 表留待内容生成逻辑落地时再建）。
+func migrateSectionSchema(db *gorm.DB) error {
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS section (
+			id               uuid PRIMARY KEY,
+			course_id        uuid NOT NULL REFERENCES course(id) ON DELETE CASCADE,
+			position         integer NOT NULL,
+			type             section_type NOT NULL,
+			title            text NOT NULL DEFAULT '',
+			knowledge_points jsonb NOT NULL DEFAULT '[]',
+			prompt           text,
+			status           section_status NOT NULL DEFAULT 'pending',
+			content          jsonb,
+			steps            jsonb,
+			create_by        uuid REFERENCES users(id) ON DELETE SET NULL,
+			create_at        timestamptz NOT NULL DEFAULT now(),
+			update_by        uuid REFERENCES users(id) ON DELETE SET NULL,
+			update_at        timestamptz NOT NULL DEFAULT now()
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uniq_section_course_position ON section (course_id, position)`,
+	}
+	for _, stmt := range stmts {
+		if err := db.Exec(stmt).Error; err != nil {
+			return fmt.Errorf("migrate section schema: %w", err)
+		}
 	}
 	return nil
 }

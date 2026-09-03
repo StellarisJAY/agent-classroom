@@ -19,6 +19,7 @@ type mockCourseRepo struct {
 	create   func(*types.Course) error
 	getByID  func(types.ID, types.ID) (*types.Course, error)
 	updateTt func(types.ID, string) error
+	updateSt func(types.ID, string) error
 }
 
 var _ types.CourseRepo = (*mockCourseRepo)(nil)
@@ -44,6 +45,12 @@ func (m *mockCourseRepo) GetByID(_ context.Context, owner, id types.ID) (*types.
 func (m *mockCourseRepo) UpdateTitle(_ context.Context, id types.ID, title string) error {
 	if m.updateTt != nil {
 		return m.updateTt(id, title)
+	}
+	return nil
+}
+func (m *mockCourseRepo) UpdateStatus(_ context.Context, id types.ID, status string) error {
+	if m.updateSt != nil {
+		return m.updateSt(id, status)
 	}
 	return nil
 }

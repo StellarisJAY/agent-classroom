@@ -76,11 +76,14 @@ func NewApp(cfg *config.Config) (*App, error) {
 	courseRepo := repo.NewCourseRepo(db)
 	outlineRepo := repo.NewOutlineRepo(db)
 	documentRepo := repo.NewDocumentRepo(db)
+	sectionRepo := repo.NewSectionRepo(db)
 	courseSvc := service.NewCourseService(courseRepo, outlineRepo, documentRepo, store, objStorage, modelConfigSvc, modelRegistry)
 	courseHandler := handler.NewCourseHandler(courseSvc)
+	sectionSvc := service.NewSectionService(courseRepo, outlineRepo, sectionRepo, store)
+	sectionHandler := handler.NewSectionHandler(sectionSvc)
 
 	e := gin.New()
-	router.Register(e, cfg, logger, authHandler, modelConfigHandler, courseHandler, objStorage)
+	router.Register(e, cfg, logger, authHandler, modelConfigHandler, courseHandler, sectionHandler, objStorage)
 
 	return &App{cfg: cfg, db: db, engine: e, logger: logger, modelRegistry: modelRegistry}, nil
 }

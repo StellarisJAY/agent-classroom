@@ -68,6 +68,24 @@ export interface OutlineSection {
   knowledge_points: string[]
 }
 
+/** 环节生成状态：pending | generating | done */
+export const SectionStatus = {
+  Pending: 'pending',
+  Generating: 'generating',
+  Done: 'done',
+} as const
+export type SectionStatusValue = (typeof SectionStatus)[keyof typeof SectionStatus]
+
+/** 环节生成进度（确认大纲返回 / SSE 进度） */
+export interface GenerationSection {
+  id: string
+  position: number
+  type: SectionTypeValue
+  title: string
+  status: SectionStatusValue
+  knowledge_points: string[]
+}
+
 /** 后端 OutlineView（GET /courses/:id/outline） */
 export interface OutlineView {
   status: string
@@ -127,4 +145,22 @@ export function createCourse(
 /** 查询某课程已保存的大纲；未生成时抛出 404 业务错误 */
 export function getOutline(courseId: string): Promise<OutlineView> {
   return request<OutlineView>({ url: `/courses/${courseId}/outline`, method: 'get' })
+}
+
+/** 确认大纲：提交最终有序环节列表，后端覆盖大纲并物化，随后后台串行生成内容。
+ *  返回物化后的环节生成进度。 */
+export function confirmOutline(
+  courseId: string,
+  sections: OutlineSection[],
+): Promise<GenerationSection[]> {
+  return request<GenerationSection[]>({
+    url: `/courses/${courseId}/outline/confirm`,
+    method: 'post',
+    data: { sections },
+  })
+}
+
+/** 查询某课程全部环节当前生成进度（用于进入页面时恢复/推导步骤）。 */
+export function getSections(courseId: string): Promise<GenerationSection[]> {
+  return request<GenerationSection[]>({ url: `/courses/${courseId}/sections`, method: 'get' })
 }

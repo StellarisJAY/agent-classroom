@@ -97,6 +97,20 @@ func (r *courseRepo) UpdateTitle(ctx context.Context, id types.ID, title string)
 	return nil
 }
 
+func (r *courseRepo) UpdateStatus(ctx context.Context, id types.ID, status string) error {
+	res := r.db(ctx).
+		Model(&types.Course{}).
+		Where("id = ?", id).
+		Updates(map[string]any{"status": status, "update_at": time.Now()})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return types.ErrNotFound
+	}
+	return nil
+}
+
 // escapeLike 转义 ILIKE 通配符与反斜杠，使关键字按字面匹配。
 func escapeLike(s string) string {
 	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
