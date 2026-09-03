@@ -2,14 +2,6 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 import { getToken } from '@/api/token'
 
-/** 需要登录才能访问的路由 */
-const protectedRoutes = [
-  '/',
-  '/create',
-  '/course/:courseId/learn',
-  '/preview/:courseId',
-]
-
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -73,10 +65,14 @@ const router = createRouter({
   ],
 })
 
-/** 全局前置守卫：受保护路由需登录态 */
+/** 全局前置守卫：受保护路由需登录态；已登录访问 /login 则回首页 */
 router.beforeEach((to) => {
-  const needAuth = protectedRoutes.some((p) => to.path.match(p))
-  if (needAuth && !getToken()) {
+  const isPublic = to.meta.public === true
+  if (isPublic) {
+    if (to.path === '/login' && getToken()) return '/'
+    return true
+  }
+  if (!getToken()) {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
   return true
