@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// LearnLayout：学习布局（无导航栏，占位骨架）
+// LearnLayout：学习布局（无导航栏）。全屏高度，内容区由子路由(LearnView)编排。
 </script>
 
 <template>
@@ -11,7 +11,9 @@
 <style scoped>
 .learn-layout {
   height: 100%;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 </style>

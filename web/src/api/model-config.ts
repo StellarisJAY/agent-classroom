@@ -50,9 +50,7 @@ export function listModelConfigs(): Promise<ModelConfigInfo[]> {
 }
 
 /** 新增模型配置 */
-export function createModelConfig(
-  payload: CreateModelConfigPayload,
-): Promise<ModelConfigInfo> {
+export function createModelConfig(payload: CreateModelConfigPayload): Promise<ModelConfigInfo> {
   return request<ModelConfigInfo>({
     url: '/model-configs',
     method: 'post',

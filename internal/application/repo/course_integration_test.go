@@ -25,7 +25,7 @@ func seedUsers(t *testing.T, db *gorm.DB, names ...string) []types.User {
 func seedCourse(t *testing.T, db *gorm.DB, owner types.ID, title, status string, isPublic bool) types.Course {
 	t.Helper()
 	now := time.Now()
-	c := types.Course{ID: types.NewID(), OwnerID: owner, Title: title, Description: "d",
+	c := types.Course{ID: types.NewID(), OwnerID: owner, Title: title, Prompt: "d",
 		Status: status, IsPublic: isPublic, CreateAt: now, UpdateAt: now}
 	require.NoError(t, db.Create(&c).Error)
 	return c

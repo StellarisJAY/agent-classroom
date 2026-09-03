@@ -87,91 +87,91 @@ async function handleSubmit() {
 
 <template>
   <div class="auth-page">
-      <div class="auth-page__inner">
-        <header class="auth-page__header">
-          <h1 class="auth-page__title">AGENT-C</h1>
-          <p class="auth-page__subtitle">
-            {{ isLogin ? '登录后开始学习' : '创建账号，生成你的互动课程' }}
-          </p>
-        </header>
+    <div class="auth-page__inner">
+      <header class="auth-page__header">
+        <h1 class="auth-page__title">AGENT-C</h1>
+        <p class="auth-page__subtitle">
+          {{ isLogin ? '登录后开始学习' : '创建账号，生成你的互动课程' }}
+        </p>
+      </header>
 
-        <n-card class="auth-card" :bordered="false">
-          <div class="auth-card__tabs" role="tablist" aria-label="登录或注册">
-            <button
-              type="button"
-              class="auth-card__tab"
-              :class="{ 'auth-card__tab--active': isLogin }"
-              role="tab"
-              :aria-selected="isLogin"
-              @click="switchMode('login')"
-            >
-              登录
-            </button>
-            <button
-              type="button"
-              class="auth-card__tab"
-              :class="{ 'auth-card__tab--active': !isLogin }"
-              role="tab"
-              :aria-selected="!isLogin"
-              @click="switchMode('register')"
-            >
-              注册
-            </button>
-          </div>
+      <n-card class="auth-card" :bordered="false">
+        <div class="auth-card__tabs" role="tablist" aria-label="登录或注册">
+          <button
+            type="button"
+            class="auth-card__tab"
+            :class="{ 'auth-card__tab--active': isLogin }"
+            role="tab"
+            :aria-selected="isLogin"
+            @click="switchMode('login')"
+          >
+            登录
+          </button>
+          <button
+            type="button"
+            class="auth-card__tab"
+            :class="{ 'auth-card__tab--active': !isLogin }"
+            role="tab"
+            :aria-selected="!isLogin"
+            @click="switchMode('register')"
+          >
+            注册
+          </button>
+        </div>
 
-          <n-form ref="formRef" :model="form" :rules="rules" label-placement="top" size="large">
-            <n-form-item v-if="!isLogin" label="用户名" path="username">
-              <n-input
-                v-model:value="form.username"
-                placeholder="2-32 位用户名"
-                :disabled="loading"
-                @keyup.enter="handleSubmit"
-              />
-            </n-form-item>
+        <n-form ref="formRef" :model="form" :rules="rules" label-placement="top" size="large">
+          <n-form-item v-if="!isLogin" label="用户名" path="username">
+            <n-input
+              v-model:value="form.username"
+              placeholder="2-32 位用户名"
+              :disabled="loading"
+              @keyup.enter="handleSubmit"
+            />
+          </n-form-item>
 
-            <n-form-item v-if="!isLogin" label="邮箱" path="email">
-              <n-input
-                v-model:value="form.email"
-                placeholder="you@example.com"
-                :disabled="loading"
-                @keyup.enter="handleSubmit"
-              />
-            </n-form-item>
+          <n-form-item v-if="!isLogin" label="邮箱" path="email">
+            <n-input
+              v-model:value="form.email"
+              placeholder="you@example.com"
+              :disabled="loading"
+              @keyup.enter="handleSubmit"
+            />
+          </n-form-item>
 
-            <n-form-item v-if="isLogin" label="用户名或邮箱" path="account">
-              <n-input
-                v-model:value="form.account"
-                placeholder="请输入用户名或邮箱"
-                :disabled="loading"
-                @keyup.enter="handleSubmit"
-              />
-            </n-form-item>
+          <n-form-item v-if="isLogin" label="用户名或邮箱" path="account">
+            <n-input
+              v-model:value="form.account"
+              placeholder="请输入用户名或邮箱"
+              :disabled="loading"
+              @keyup.enter="handleSubmit"
+            />
+          </n-form-item>
 
-            <n-form-item label="密码" path="password">
-              <n-input
-                v-model:value="form.password"
-                type="password"
-                show-password-on="click"
-                :placeholder="isLogin ? '请输入密码' : '6-72 位密码'"
-                :disabled="loading"
-                @keyup.enter="handleSubmit"
-              />
-            </n-form-item>
+          <n-form-item label="密码" path="password">
+            <n-input
+              v-model:value="form.password"
+              type="password"
+              show-password-on="click"
+              :placeholder="isLogin ? '请输入密码' : '6-72 位密码'"
+              :disabled="loading"
+              @keyup.enter="handleSubmit"
+            />
+          </n-form-item>
 
-            <n-button
-              type="primary"
-              block
-              size="large"
-              :loading="loading"
-              class="auth-card__submit"
-              @click="handleSubmit"
-            >
-              {{ isLogin ? '登 录' : '注 册' }}
-            </n-button>
-          </n-form>
-        </n-card>
-      </div>
+          <n-button
+            type="primary"
+            block
+            size="large"
+            :loading="loading"
+            class="auth-card__submit"
+            @click="handleSubmit"
+          >
+            {{ isLogin ? '登 录' : '注 册' }}
+          </n-button>
+        </n-form>
+      </n-card>
     </div>
+  </div>
 </template>
 
 <style scoped>
@@ -181,11 +181,7 @@ async function handleSubmit() {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: radial-gradient(
-    circle at 50% 0%,
-    rgba(20, 184, 166, 0.1),
-    transparent 55%
-  );
+  background: radial-gradient(circle at 50% 0%, rgba(20, 184, 166, 0.1), transparent 55%);
 }
 
 .auth-page__inner {
@@ -216,7 +212,9 @@ async function handleSubmit() {
 
 .auth-card {
   border-radius: 8px;
-  box-shadow: 0 1px 2px rgba(2, 6, 23, 0.06), 0 8px 24px rgba(2, 6, 23, 0.05);
+  box-shadow:
+    0 1px 2px rgba(2, 6, 23, 0.06),
+    0 8px 24px rgba(2, 6, 23, 0.05);
 }
 
 .auth-card__tabs {
@@ -234,7 +232,9 @@ async function handleSubmit() {
   border: none;
   cursor: pointer;
   border-bottom: 2px solid transparent;
-  transition: color 0.2s, border-color 0.2s;
+  transition:
+    color 0.2s,
+    border-color 0.2s;
 }
 
 .auth-card__tab:hover {

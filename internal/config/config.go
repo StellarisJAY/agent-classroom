@@ -16,7 +16,14 @@ type Config struct {
 	CORS     CORSConfig
 	Crypto   CryptoConfig
 	Model    ModelConfig
+	Storage  StorageConfig
 	Log      LogConfig
+}
+
+// StorageConfig 对象存储配置（本期仅本地磁盘）。
+type StorageConfig struct {
+	// LocalDir 本地存储根目录
+	LocalDir string `mapstructure:"local_dir"`
 }
 
 // CryptoConfig AES-256-GCM 加密配置，用于 API Key 等敏感字段存储加密。
@@ -117,6 +124,8 @@ func Load() (*Config, error) {
 
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "text")
+
+	v.SetDefault("storage.local_dir", "./data/uploads")
 
 	// 读取同目录 config.yaml；未找到时不报错，走默认 + env
 	v.SetConfigName("config")

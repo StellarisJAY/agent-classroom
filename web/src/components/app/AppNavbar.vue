@@ -10,7 +10,8 @@ const emit = defineEmits<{
 
 const showMenu = ref(false)
 
-const renderIcon = (icon: typeof SettingsOutline) => () => h(NIcon, null, { default: () => h(icon) })
+const renderIcon = (icon: typeof SettingsOutline) => () =>
+  h(NIcon, null, { default: () => h(icon) })
 
 function handleSelect(key: string) {
   showMenu.value = false

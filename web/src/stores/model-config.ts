@@ -15,9 +15,7 @@ export const useModelConfigStore = defineStore('model-config', () => {
   const initialized = ref(false)
 
   /** 当前默认模型配置；无默认时为 null */
-  const defaultConfig = computed(
-    () => configs.value.find((c) => c.is_default) ?? null,
-  )
+  const defaultConfig = computed(() => configs.value.find((c) => c.is_default) ?? null)
   const hasConfig = computed(() => configs.value.length > 0)
 
   /** 拉取配置列表并覆盖本地 */

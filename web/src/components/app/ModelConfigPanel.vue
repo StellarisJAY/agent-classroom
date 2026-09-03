@@ -253,7 +253,11 @@ onMounted(() => {
               </template>
             </n-button>
 
-            <n-popconfirm positive-text="删除" negative-text="取消" @positive-click="handleDelete(cfg)">
+            <n-popconfirm
+              positive-text="删除"
+              negative-text="取消"
+              @positive-click="handleDelete(cfg)"
+            >
               <template #trigger>
                 <n-button quaternary circle size="small" aria-label="删除">
                   <template #icon>
@@ -328,7 +332,9 @@ onMounted(() => {
         <n-form-item label="设为默认" path="is_default">
           <n-switch
             v-model:value="form.is_default"
-            :disabled="saving || (editingId !== null && configs.find((c) => c.id === editingId)?.is_default)"
+            :disabled="
+              saving || (editingId !== null && configs.find((c) => c.id === editingId)?.is_default)
+            "
           />
         </n-form-item>
 

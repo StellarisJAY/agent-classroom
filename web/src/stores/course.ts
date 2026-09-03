@@ -2,11 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import * as courseApi from '@/api/course'
-import type {
-  CourseListItem,
-  CourseScopeValue,
-  ProgressStatusValue,
-} from '@/api/course'
+import type { CourseListItem, CourseScopeValue, ProgressStatusValue } from '@/api/course'
 
 /** 每页卡片数 */
 export const COURSE_PAGE_SIZE = 12
@@ -26,9 +22,7 @@ export const useCourseStore = defineStore('course', () => {
 
   const hasItems = computed(() => items.value.length > 0)
   /** 是否还有下一页可加载 */
-  const hasMore = computed(
-    () => total.value > 0 && page.value * COURSE_PAGE_SIZE < total.value,
-  )
+  const hasMore = computed(() => total.value > 0 && page.value * COURSE_PAGE_SIZE < total.value)
 
   let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -44,9 +38,7 @@ export const useCourseStore = defineStore('course', () => {
         page: target,
         page_size: COURSE_PAGE_SIZE,
       })
-      items.value = replace
-        ? res.items
-        : [...items.value, ...res.items]
+      items.value = replace ? res.items : [...items.value, ...res.items]
       total.value = res.total
       page.value = res.page
       return res

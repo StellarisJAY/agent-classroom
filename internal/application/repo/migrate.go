@@ -48,14 +48,14 @@ func ensureEnum(db *gorm.DB, name string, values ...string) error {
 	return nil
 }
 
-// migrateCourseSchema 创建 course / progress 表。
+// migrateCourseSchema 创建 course / progress / outline / document 表。
 func migrateCourseSchema(db *gorm.DB) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS course (
 			id          uuid PRIMARY KEY,
 			owner_id    uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			title       text NOT NULL,
-			description text NOT NULL,
+			title       text NOT NULL DEFAULT '',
+			prompt      text NOT NULL DEFAULT '',
 			status      course_status NOT NULL DEFAULT 'draft',
 			is_public   boolean NOT NULL DEFAULT false,
 			create_by   uuid REFERENCES users(id) ON DELETE SET NULL,
@@ -72,11 +72,39 @@ func migrateCourseSchema(db *gorm.DB) error {
 			update_at timestamptz NOT NULL DEFAULT now()
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uniq_progress_course_user ON progress (course_id, user_id)`,
+		`CREATE TABLE IF NOT EXISTS outline (
+			id        uuid PRIMARY KEY,
+			course_id uuid NOT NULL REFERENCES course(id) ON DELETE CASCADE,
+			content   jsonb NOT NULL,
+			status    text NOT NULL DEFAULT 'draft',
+			create_by uuid REFERENCES users(id) ON DELETE SET NULL,
+			create_at timestamptz NOT NULL DEFAULT now(),
+			update_by uuid REFERENCES users(id) ON DELETE SET NULL,
+			update_at timestamptz NOT NULL DEFAULT now()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_outline_course ON outline (course_id)`,
+		`CREATE TABLE IF NOT EXISTS document (
+			id        uuid PRIMARY KEY,
+			course_id uuid NOT NULL REFERENCES course(id) ON DELETE CASCADE,
+			filename  text NOT NULL,
+			url       text NOT NULL,
+			create_by uuid REFERENCES users(id) ON DELETE SET NULL,
+			create_at timestamptz NOT NULL DEFAULT now()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_document_course ON document (course_id)`,
 	}
 	for _, stmt := range stmts {
 		if err := db.Exec(stmt).Error; err != nil {
 			return fmt.Errorf("migrate course schema: %w", err)
 		}
+	}
+
+	// 兼容已存在的旧库：补 prompt 列、移除废弃的 description 列。
+	if err := db.Exec(`ALTER TABLE course ADD COLUMN IF NOT EXISTS prompt text NOT NULL DEFAULT ''`).Error; err != nil {
+		return fmt.Errorf("migrate course add prompt: %w", err)
+	}
+	if err := db.Exec(`ALTER TABLE course DROP COLUMN IF EXISTS description`).Error; err != nil {
+		return fmt.Errorf("migrate course drop description: %w", err)
 	}
 	return nil
 }

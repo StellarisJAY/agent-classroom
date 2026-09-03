@@ -59,18 +59,24 @@ function formatDate(iso: string): string {
 <template>
   <router-link :to="target" class="course-card">
     <div class="course-card__head">
-      <h3 class="course-card__title">{{ item.title }}</h3>
-      <n-tag :type="sourceLabel === '公共库' ? 'primary' : 'default'" size="small" :bordered="false">
+      <h3 class="course-card__title">{{ item.title || '未命名课程' }}</h3>
+      <n-tag
+        :type="sourceLabel === '公共库' ? 'primary' : 'default'"
+        size="small"
+        :bordered="false"
+      >
         {{ sourceLabel }}
       </n-tag>
     </div>
 
-    <p class="course-card__desc">{{ item.description }}</p>
-
     <div class="course-card__meta">
       <n-tag :type="statusMeta.type" size="small" :bordered="false">{{ statusMeta.label }}</n-tag>
-      <n-tag :type="progressMeta.type" size="small" :bordered="false">{{ progressMeta.label }}</n-tag>
-      <span class="course-card__date" v-if="formatDate(item.created_at)">创建于 {{ formatDate(item.created_at) }}</span>
+      <n-tag :type="progressMeta.type" size="small" :bordered="false">{{
+        progressMeta.label
+      }}</n-tag>
+      <span class="course-card__date" v-if="formatDate(item.created_at)"
+        >创建于 {{ formatDate(item.created_at) }}</span
+      >
     </div>
   </router-link>
 </template>
@@ -121,22 +127,12 @@ function formatDate(iso: string): string {
   -webkit-box-orient: vertical;
 }
 
-.course-card__desc {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--app-text-2, #64748b);
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
 .course-card__meta {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  margin-top: auto;
 }
 
 .course-card__date {

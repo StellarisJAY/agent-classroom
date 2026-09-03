@@ -2,7 +2,9 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -53,6 +55,46 @@ func (r *courseRepo) List(ctx context.Context, userID types.ID, f types.CourseLi
 		return nil, 0, err
 	}
 	return rows, total, nil
+}
+
+func (r *courseRepo) Create(ctx context.Context, c *types.Course) error {
+	if c.ID == types.NilID {
+		c.ID = types.NewID()
+	}
+	now := time.Now()
+	if c.CreateAt.IsZero() {
+		c.CreateAt = now
+	}
+	if c.UpdateAt.IsZero() {
+		c.UpdateAt = now
+	}
+	return r.db(ctx).Create(c).Error
+}
+
+func (r *courseRepo) GetByID(ctx context.Context, ownerID, id types.ID) (*types.Course, error) {
+	var c types.Course
+	err := r.db(ctx).Where("id = ? AND owner_id = ?", id, ownerID).First(&c).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, types.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+func (r *courseRepo) UpdateTitle(ctx context.Context, id types.ID, title string) error {
+	res := r.db(ctx).
+		Model(&types.Course{}).
+		Where("id = ?", id).
+		Updates(map[string]any{"title": title, "update_at": time.Now()})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return types.ErrNotFound
+	}
+	return nil
 }
 
 // escapeLike 转义 ILIKE 通配符与反斜杠，使关键字按字面匹配。

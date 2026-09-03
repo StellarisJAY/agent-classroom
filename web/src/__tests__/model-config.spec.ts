@@ -7,15 +7,16 @@ import { createPinia, setActivePinia } from 'pinia'
 
 vi.mock('@/api/model-config', () => ({
   listModelConfigs: vi.fn<() => Promise<ModelConfigInfo[]>>(),
-  createModelConfig: vi.fn<
-    (payload: {
-      provider: string
-      model: string
-      base_url: string
-      api_key: string
-      is_default: boolean
-    }) => Promise<ModelConfigInfo>
-  >(),
+  createModelConfig:
+    vi.fn<
+      (payload: {
+        provider: string
+        model: string
+        base_url: string
+        api_key: string
+        is_default: boolean
+      }) => Promise<ModelConfigInfo>
+    >(),
   updateModelConfig: vi.fn<() => Promise<ModelConfigInfo>>(),
   deleteModelConfig: vi.fn<() => Promise<void>>(),
   setDefaultModelConfig: vi.fn<(id: string) => Promise<void>>(),
@@ -53,20 +54,14 @@ describe('model-config store', () => {
   })
 
   it('defaultConfig 反映 is_default', async () => {
-    api.listModelConfigs.mockResolvedValue([
-      cfg({ id: 'a' }),
-      cfg({ id: 'b', is_default: true }),
-    ])
+    api.listModelConfigs.mockResolvedValue([cfg({ id: 'a' }), cfg({ id: 'b', is_default: true })])
     const store = useModelConfigStore()
     await store.ensureLoaded()
     expect(store.defaultConfig?.id).toBe('b')
   })
 
   it('setDefault 本地互斥更新', async () => {
-    api.listModelConfigs.mockResolvedValue([
-      cfg({ id: 'a', is_default: true }),
-      cfg({ id: 'b' }),
-    ])
+    api.listModelConfigs.mockResolvedValue([cfg({ id: 'a', is_default: true }), cfg({ id: 'b' })])
     api.setDefaultModelConfig.mockResolvedValue(undefined)
     const store = useModelConfigStore()
     await store.ensureLoaded()

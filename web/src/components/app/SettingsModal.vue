@@ -60,9 +60,7 @@ function handleThemeChange(mode: ThemeMode) {
               <n-input :value="email" placeholder="邮箱" />
             </n-form-item>
           </n-form>
-          <p class="settings-profile__hint">
-            用户名 / 邮箱修改与密码重置功能将在接口就绪后开放。
-          </p>
+          <p class="settings-profile__hint">用户名 / 邮箱修改与密码重置功能将在接口就绪后开放。</p>
         </div>
       </n-tab-pane>
       <n-tab-pane name="model" tab="模型配置">
@@ -70,10 +68,7 @@ function handleThemeChange(mode: ThemeMode) {
       </n-tab-pane>
       <n-tab-pane name="appearance" tab="外观">
         <div class="settings-appearance">
-          <n-radio-group
-            :value="themeStore.mode"
-            @update:value="handleThemeChange"
-          >
+          <n-radio-group :value="themeStore.mode" @update:value="handleThemeChange">
             <n-radio-button value="system">跟随系统</n-radio-button>
             <n-radio-button value="light">亮色</n-radio-button>
             <n-radio-button value="dark">暗色</n-radio-button>

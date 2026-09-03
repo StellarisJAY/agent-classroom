@@ -20,6 +20,7 @@ import (
 	"github.com/StellarisJAY/agent-classroom/internal/model"
 	"github.com/StellarisJAY/agent-classroom/internal/model/llm"
 	"github.com/StellarisJAY/agent-classroom/internal/router"
+	"github.com/StellarisJAY/agent-classroom/internal/storage"
 	"github.com/StellarisJAY/agent-classroom/internal/util"
 )
 
@@ -67,12 +68,19 @@ func NewApp(cfg *config.Config) (*App, error) {
 	modelRegistry := model.NewRegistry()
 	modelRegistry.SetDefaultLLMFactory(llm.NewOpenAICompatible)
 
+	objStorage, err := storage.NewLocal(cfg.Storage.LocalDir)
+	if err != nil {
+		return nil, fmt.Errorf("init local storage: %w", err)
+	}
+
 	courseRepo := repo.NewCourseRepo(db)
-	courseSvc := service.NewCourseService(courseRepo)
+	outlineRepo := repo.NewOutlineRepo(db)
+	documentRepo := repo.NewDocumentRepo(db)
+	courseSvc := service.NewCourseService(courseRepo, outlineRepo, documentRepo, store, objStorage, modelConfigSvc, modelRegistry)
 	courseHandler := handler.NewCourseHandler(courseSvc)
 
 	e := gin.New()
-	router.Register(e, cfg, logger, authHandler, modelConfigHandler, courseHandler)
+	router.Register(e, cfg, logger, authHandler, modelConfigHandler, courseHandler, objStorage)
 
 	return &App{cfg: cfg, db: db, engine: e, logger: logger, modelRegistry: modelRegistry}, nil
 }

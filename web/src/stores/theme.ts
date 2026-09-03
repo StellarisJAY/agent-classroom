@@ -29,9 +29,7 @@ export const useThemeStore = defineStore('theme', () => {
   mql.addEventListener('change', onSystemChange)
 
   /** 当前实际是否为深色（system 模式跟随 OS） */
-  const isDark = computed(() =>
-    mode.value === 'system' ? sysDark.value : mode.value === 'dark',
-  )
+  const isDark = computed(() => (mode.value === 'system' ? sysDark.value : mode.value === 'dark'))
 
   /** 解析后的主题名，供 Naive UI theme / overrides 使用 */
   const resolved = computed<ThemeName>(() => (isDark.value ? 'dark' : 'light'))
