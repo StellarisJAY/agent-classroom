@@ -1,11 +1,21 @@
-<script setup lang="ts"></script>
+<script setup lang="ts">
+import { computed } from 'vue'
+import { NConfigProvider, NDialogProvider, NMessageProvider } from 'naive-ui'
+
+import { useThemeStore } from '@/stores/theme'
+import { overridesFor, themeFor } from '@/theme'
+
+const themeStore = useThemeStore()
+const theme = computed(() => themeFor(themeStore.theme))
+const themeOverrides = computed(() => overridesFor(themeStore.theme))
+</script>
 
 <template>
-  <h1>You did it!</h1>
-  <p>
-    Visit <a href="https://vuejs.org/" target="_blank" rel="noopener">vuejs.org</a> to read the
-    documentation
-  </p>
+  <n-config-provider :theme="theme" :theme-overrides="themeOverrides">
+    <n-message-provider>
+      <n-dialog-provider>
+        <router-view />
+      </n-dialog-provider>
+    </n-message-provider>
+  </n-config-provider>
 </template>
-
-<style scoped></style>
