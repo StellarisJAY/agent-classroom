@@ -4,18 +4,19 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
+
+	"github.com/StellarisJAY/agent-classroom/internal/types"
 )
 
 // Claims JWT 载荷
 type Claims struct {
-	UserID   uuid.UUID `json:"uid"`
-	Username string    `json:"username"`
+	UserID   types.ID `json:"uid"`
+	Username string   `json:"username"`
 	jwt.RegisteredClaims
 }
 
 // SignToken 签发 JWT
-func SignToken(secret string, userID uuid.UUID, username string, expire time.Duration) (string, error) {
+func SignToken(secret string, userID types.ID, username string, expire time.Duration) (string, error) {
 	now := time.Now()
 	claims := Claims{
 		UserID:   userID,

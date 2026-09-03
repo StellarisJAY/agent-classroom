@@ -7,11 +7,12 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/StellarisJAY/agent-classroom/internal/config"
+	"github.com/StellarisJAY/agent-classroom/internal/handler"
 	"github.com/StellarisJAY/agent-classroom/internal/middleware"
 )
 
 // Register 挂载全局中间件并注册路由分组。
-func Register(e *gin.Engine, cfg *config.Config, logger *slog.Logger) {
+func Register(e *gin.Engine, cfg *config.Config, logger *slog.Logger, auth *handler.AuthHandler) {
 	// 全局中间件
 	e.Use(
 		middleware.Recovery(logger),
@@ -26,11 +27,15 @@ func Register(e *gin.Engine, cfg *config.Config, logger *slog.Logger) {
 
 	// API 根分组
 	api := e.Group("/api")
-	registerAPI(api)
+	registerAPI(api, cfg, auth)
 }
 
 // registerAPI 集中注册所有业务路由分组。
-// 后续每个资源落地时在此挂载：auth := api.Group("/auth") ...
-func registerAPI(api *gin.RouterGroup) {
-	_ = api // 业务路由在 handler 落地后补充
+func registerAPI(api *gin.RouterGroup, cfg *config.Config, auth *handler.AuthHandler) {
+	authGroup := api.Group("/auth")
+	{
+		authGroup.POST("/register", auth.Register)
+		authGroup.POST("/login", auth.Login)
+		authGroup.GET("/me", middleware.Auth(cfg.JWT.Secret), auth.Me)
+	}
 }

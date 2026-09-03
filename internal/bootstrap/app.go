@@ -14,7 +14,9 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/StellarisJAY/agent-classroom/internal/application/repo"
+	"github.com/StellarisJAY/agent-classroom/internal/application/service"
 	"github.com/StellarisJAY/agent-classroom/internal/config"
+	"github.com/StellarisJAY/agent-classroom/internal/handler"
 	"github.com/StellarisJAY/agent-classroom/internal/router"
 )
 
@@ -38,8 +40,17 @@ func NewApp(cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("init database: %w", err)
 	}
 
+	// 迁移工具落地前的占位 AutoMigrate
+	if err := repo.Migrate(db); err != nil {
+		return nil, fmt.Errorf("auto migrate: %w", err)
+	}
+
+	userRepo := repo.NewUserRepo(db)
+	userSvc := service.NewUserService(userRepo, cfg)
+	authHandler := handler.NewAuthHandler(userSvc)
+
 	e := gin.New()
-	router.Register(e, cfg, logger)
+	router.Register(e, cfg, logger, authHandler)
 
 	return &App{cfg: cfg, db: db, engine: e, logger: logger}, nil
 }
