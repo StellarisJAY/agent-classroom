@@ -30,6 +30,18 @@ cors:
     - Content-Type
   max_age: 86400
 
+crypto:
+  # 存储加密 API Key 的 32 字节密钥（AES-256-GCM），生产务必通过 APP_CRYPTO_ENCRYPTION_KEY 覆盖
+  encryption_key: "change-me-to-a-32-byte-encryption-key"
+
+model:
+  # 服务端统一兜底模型：用户未配置专属模型时使用（可通过 APP_MODEL_DEFAULT_* 覆盖）
+  default:
+    provider: openai
+    model: gpt-4o-mini
+    base_url: https://api.openai.com/v1
+    api_key: ""
+
 log:
   level: info          # debug | info | warn | error
   format: text         # text | json

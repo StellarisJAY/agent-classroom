@@ -17,15 +17,19 @@ import (
 	"github.com/StellarisJAY/agent-classroom/internal/application/service"
 	"github.com/StellarisJAY/agent-classroom/internal/config"
 	"github.com/StellarisJAY/agent-classroom/internal/handler"
+	"github.com/StellarisJAY/agent-classroom/internal/model"
+	"github.com/StellarisJAY/agent-classroom/internal/model/llm"
 	"github.com/StellarisJAY/agent-classroom/internal/router"
+	"github.com/StellarisJAY/agent-classroom/internal/util"
 )
 
 // App 持有已装配的运行时依赖
 type App struct {
-	cfg    *config.Config
-	db     *gorm.DB
-	engine *gin.Engine
-	logger *slog.Logger
+	cfg           *config.Config
+	db            *gorm.DB
+	engine        *gin.Engine
+	logger        *slog.Logger
+	modelRegistry *model.Registry
 }
 
 // NewApp 装配全部依赖
@@ -44,15 +48,33 @@ func NewApp(cfg *config.Config) (*App, error) {
 	if err := repo.Migrate(db); err != nil {
 		return nil, fmt.Errorf("auto migrate: %w", err)
 	}
+	cipher, err := util.NewGCMCipher([]byte(cfg.Crypto.EncryptionKey))
+	if err != nil {
+		return nil, fmt.Errorf("init crypto cipher: %w", err)
+	}
+
+	store := repo.NewStore(db)
 
 	userRepo := repo.NewUserRepo(db)
 	userSvc := service.NewUserService(userRepo, cfg)
 	authHandler := handler.NewAuthHandler(userSvc)
 
-	e := gin.New()
-	router.Register(e, cfg, logger, authHandler)
+	modelConfigRepo := repo.NewModelConfigRepo(db)
+	modelConfigSvc := service.NewModelConfigService(modelConfigRepo, store, cipher, cfg)
+	modelConfigHandler := handler.NewModelConfigHandler(modelConfigSvc)
 
-	return &App{cfg: cfg, db: db, engine: e, logger: logger}, nil
+	// 模型适配层注册表：默认回退 OpenAI 兼容实现，覆盖 openai/deepseek/qwen 等。
+	modelRegistry := model.NewRegistry()
+	modelRegistry.SetDefaultLLMFactory(llm.NewOpenAICompatible)
+
+	courseRepo := repo.NewCourseRepo(db)
+	courseSvc := service.NewCourseService(courseRepo)
+	courseHandler := handler.NewCourseHandler(courseSvc)
+
+	e := gin.New()
+	router.Register(e, cfg, logger, authHandler, modelConfigHandler, courseHandler)
+
+	return &App{cfg: cfg, db: db, engine: e, logger: logger, modelRegistry: modelRegistry}, nil
 }
 
 // Run 启动 HTTP 服务，监听系统信号优雅关闭

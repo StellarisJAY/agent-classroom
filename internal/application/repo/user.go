@@ -76,8 +76,3 @@ func (r *userRepo) exists(ctx context.Context, query string, arg any) (bool, err
 	}
 	return count > 0, nil
 }
-
-// Migrate 使用 GORM AutoMigrate 占位建表（迁移工具落地前的过渡方案）。
-func Migrate(db *gorm.DB) error {
-	return db.AutoMigrate(&types.User{})
-}

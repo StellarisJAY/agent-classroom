@@ -210,12 +210,11 @@ async function handleSubmit() {
 
 .auth-page__subtitle {
   margin-top: 8px;
-  color: var(--n-text-color-3, #64748b);
+  color: var(--app-text-2, #64748b);
   font-size: 14px;
 }
 
 .auth-card {
-  background: var(--n-color, #ffffff);
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(2, 6, 23, 0.06), 0 8px 24px rgba(2, 6, 23, 0.05);
 }
@@ -223,14 +222,14 @@ async function handleSubmit() {
 .auth-card__tabs {
   display: flex;
   margin-bottom: 20px;
-  border-bottom: 1px solid var(--n-divider-color, #e2e8f0);
+  border-bottom: 1px solid var(--app-divider, #e2e8f0);
 }
 
 .auth-card__tab {
   flex: 1;
   padding: 12px 0;
   font-size: 15px;
-  color: var(--n-text-color-3, #64748b);
+  color: var(--app-text-2, #64748b);
   background: none;
   border: none;
   cursor: pointer;
@@ -239,12 +238,12 @@ async function handleSubmit() {
 }
 
 .auth-card__tab:hover {
-  color: var(--n-text-color, #0f172a);
+  color: var(--app-text-1, #0f172a);
 }
 
 .auth-card__tab--active {
-  color: var(--n-primary-color, #0d9488);
-  border-bottom-color: var(--n-primary-color, #0d9488);
+  color: var(--app-primary, #0d9488);
+  border-bottom-color: var(--app-primary, #0d9488);
   font-weight: 600;
 }
 

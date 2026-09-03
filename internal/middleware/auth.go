@@ -1,10 +1,12 @@
 package middleware
 
 import (
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/StellarisJAY/agent-classroom/internal/types"
 	"github.com/StellarisJAY/agent-classroom/internal/util"
 )
 
@@ -28,5 +30,8 @@ func Auth(secret string) gin.HandlerFunc {
 }
 
 func abortUnauthorized(c *gin.Context) {
-	c.AbortWithStatusJSON(401, gin.H{"code": 40100, "message": "未登录或登录已过期"})
+	c.AbortWithStatusJSON(http.StatusOK, gin.H{
+		"code":    types.CodeUnauthorized,
+		"message": "未登录或登录已过期",
+	})
 }

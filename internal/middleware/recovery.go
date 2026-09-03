@@ -7,6 +7,8 @@ import (
 	"runtime/debug"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/StellarisJAY/agent-classroom/internal/types"
 )
 
 // Recovery 捕获 panic，记录堆栈并以统一 JSON 返回 500
@@ -19,8 +21,8 @@ func Recovery(logger *slog.Logger) gin.HandlerFunc {
 					"path", c.Request.URL.Path,
 					"stack", string(debug.Stack()),
 				)
-				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-					"code":    50000,
+				c.AbortWithStatusJSON(http.StatusOK, gin.H{
+					"code":    types.CodeInternalError,
 					"message": "服务器内部错误",
 				})
 			}

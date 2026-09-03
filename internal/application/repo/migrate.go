@@ -1,0 +1,82 @@
+package repo
+
+import (
+	"fmt"
+	"strings"
+
+	"gorm.io/gorm"
+
+	"github.com/StellarisJAY/agent-classroom/internal/types"
+)
+
+// Migrate 建表。PostgreSQL 无法用 AutoMigrate 直接创建 ENUM 类型，
+// 因此此处先以幂等方式建 ENUM，再用 AutoMigrate 建其余占位表，
+// 而 course / progress 表走原始 SQL（含外键与唯一索引），
+// 对齐 docs/数据库设计.md。
+func Migrate(db *gorm.DB) error {
+	if err := db.AutoMigrate(&types.User{}, &types.UserModelConfig{}); err != nil {
+		return fmt.Errorf("auto migrate base tables: %w", err)
+	}
+
+	if err := ensureEnum(db, "course_status",
+		types.CourseStatusDraft, types.CourseStatusOutlineConfirmed,
+		types.CourseStatusGenerating, types.CourseStatusCompleted); err != nil {
+		return err
+	}
+	if err := ensureEnum(db, "progress_status",
+		types.ProgressStatusUnstarted, types.ProgressStatusInProgress, types.ProgressStatusCompleted); err != nil {
+		return err
+	}
+
+	return migrateCourseSchema(db)
+}
+
+// ensureEnum 幂等创建 PostgreSQL ENUM 类型。
+func ensureEnum(db *gorm.DB, name string, values ...string) error {
+	quoted := make([]string, 0, len(values))
+	for _, v := range values {
+		quoted = append(quoted, "'"+v+"'")
+	}
+	ddl := fmt.Sprintf(`DO $$ BEGIN
+		IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '%s') THEN
+			CREATE TYPE %s AS ENUM (%s);
+		END IF;
+	END $$;`, name, name, strings.Join(quoted, ", "))
+	if err := db.Exec(ddl).Error; err != nil {
+		return fmt.Errorf("create enum %s: %w", name, err)
+	}
+	return nil
+}
+
+// migrateCourseSchema 创建 course / progress 表。
+func migrateCourseSchema(db *gorm.DB) error {
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS course (
+			id          uuid PRIMARY KEY,
+			owner_id    uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			title       text NOT NULL,
+			description text NOT NULL,
+			status      course_status NOT NULL DEFAULT 'draft',
+			is_public   boolean NOT NULL DEFAULT false,
+			create_by   uuid REFERENCES users(id) ON DELETE SET NULL,
+			create_at   timestamptz NOT NULL DEFAULT now(),
+			update_at   timestamptz NOT NULL DEFAULT now()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_course_owner ON course (owner_id)`,
+		`CREATE TABLE IF NOT EXISTS progress (
+			id        uuid PRIMARY KEY,
+			course_id uuid NOT NULL REFERENCES course(id) ON DELETE CASCADE,
+			user_id   uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			status    progress_status NOT NULL DEFAULT 'unstarted',
+			create_at timestamptz NOT NULL DEFAULT now(),
+			update_at timestamptz NOT NULL DEFAULT now()
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uniq_progress_course_user ON progress (course_id, user_id)`,
+	}
+	for _, stmt := range stmts {
+		if err := db.Exec(stmt).Error; err != nil {
+			return fmt.Errorf("migrate course schema: %w", err)
+		}
+	}
+	return nil
+}

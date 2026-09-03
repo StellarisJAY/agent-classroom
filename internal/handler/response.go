@@ -27,40 +27,32 @@ func OKNoData(c *gin.Context) {
 	c.JSON(http.StatusOK, Response{Code: types.CodeOK, Message: "ok"})
 }
 
-// Fail 以指定 HTTP 状态码与业务错误码返回失败
-func Fail(c *gin.Context, httpStatus, code int, msg string) {
-	c.JSON(httpStatus, Response{Code: code, Message: msg})
+// Fail 以业务错误码与消息返回失败。HTTP 层统一返回 200，业务成败由 code 表达。
+func Fail(c *gin.Context, code int, msg string) {
+	c.JSON(http.StatusOK, Response{Code: code, Message: msg})
 }
 
-// Error 根据错误类型决定响应：BizError → 对应语义；其余 → 500
+// Error 根据错误类型决定响应：BizError → 对应业务 code；其余 → 500
 func Error(c *gin.Context, err error) {
 	var be *types.BizError
 	if errors.As(err, &be) {
-		status := bizErrToHTTP(be.Code)
-		Fail(c, status, be.Code, be.Msg)
+		Fail(c, be.Code, be.Msg)
 		return
 	}
 	c.Error(err)
-	Fail(c, http.StatusInternalServerError, types.CodeInternalError, types.ErrInternal.Msg)
+	Fail(c, types.CodeInternalError, types.ErrInternal.Msg)
 }
 
-func bizErrToHTTP(code int) int {
-	switch code {
-	case types.CodeUnauthorized:
-		return http.StatusUnauthorized
-	case types.CodeForbidden:
-		return http.StatusForbidden
-	case types.CodeNotFound:
-		return http.StatusNotFound
-	case types.CodeConflict:
-		return http.StatusConflict
-	case types.CodeValidationError:
-		return http.StatusUnprocessableEntity
-	case types.CodeBadRequest:
-		return http.StatusBadRequest
-	default:
-		return http.StatusInternalServerError
+// bindQuery 绑定并校验 URL 查询参数；失败返回 400/422
+func bindQuery(c *gin.Context, dst any) error {
+	if err := c.ShouldBindQuery(dst); err != nil {
+		var verr validator.ValidationErrors
+		if errors.As(err, &verr) {
+			return types.NewError(types.CodeValidationError, err.Error())
+		}
+		return types.NewError(types.CodeBadRequest, "查询参数不合法")
 	}
+	return nil
 }
 
 // bindJSON 绑定并校验请求体；失败返回 400/422

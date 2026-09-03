@@ -23,20 +23,21 @@ http.interceptors.request.use((config) => {
   return config
 })
 
-// 响应拦截：解包统一响应 + 归一化错误
+// 响应拦截：解包统一响应 + 归一化错误。后端业务失败统一 200 + code，因此 401 主路径在成功分支。
 http.interceptors.response.use(
   (response) => {
     const body = response.data as ApiResponse
     if (body && typeof body.code === 'number' && body.code !== Code.OK) {
-      // HTTP 2xx 但业务失败（后端 OK() 走 200 + code!=0 的情况）
-      return Promise.reject(new ApiError(body.code, body.message ?? '请求失败', response.status))
+      const apiErr = new ApiError(body.code, body.message ?? '请求失败', response.status)
+      if (apiErr.isUnauthorized()) handleUnauthorized()
+      return Promise.reject(apiErr)
     }
     return response
   },
   (error: AxiosError<ApiResponse>) => {
     let apiErr: ApiError
     if (error.response) {
-      // 后端通过 Fail() 返回了带 code 的错误体
+      // 兜底：网关/代理等返回非 2xx 且带响应体的情况
       const body = error.response.data
       const code = body?.code ?? httpStatusToCode(error.response.status)
       const message = body?.message ?? fallbackMessage(error.response.status)
@@ -48,10 +49,7 @@ http.interceptors.response.use(
     }
 
     // 全局 401：清除登录态并跳登录页
-    if (apiErr.isUnauthorized()) {
-      clearToken()
-      redirectToLogin()
-    }
+    if (apiErr.isUnauthorized()) handleUnauthorized()
     return Promise.reject(apiErr)
   },
 )
@@ -65,6 +63,11 @@ export async function request<T>(config: AxiosRequestConfig): Promise<T> {
 /** 无返回数据的请求，仍校验 code */
 export async function requestVoid(config: AxiosRequestConfig): Promise<void> {
   await request<undefined>(config)
+}
+
+function handleUnauthorized(): void {
+  clearToken()
+  redirectToLogin()
 }
 
 function redirectToLogin(): void {

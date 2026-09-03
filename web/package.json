@@ -16,6 +16,7 @@
     "format": "prettier --write --experimental-cli src/"
   },
   "dependencies": {
+    "@vicons/ionicons5": "^0.13.0",
     "axios": "^1.20.0",
     "naive-ui": "^2.45.3",
     "pinia": "^4.0.2",

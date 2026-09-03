@@ -1,13 +1,41 @@
 <script setup lang="ts">
-// MainLayout：顶部导航栏布局（占位骨架，组件落地后填充）
+import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+
+import AppNavbar from '@/components/app/AppNavbar.vue'
+import SettingsModal from '@/components/app/SettingsModal.vue'
+import { useAuthStore } from '@/stores/auth'
+
+const router = useRouter()
+const authStore = useAuthStore()
+
+const settingsVisible = ref(false)
+
+onMounted(() => {
+  if (authStore.token && !authStore.user) {
+    authStore.fetchMe().catch(() => {
+      // 拉取失败（如 token 失效）由 http 层统一处理跳登录
+    })
+  }
+})
+
+function openSettings() {
+  settingsVisible.value = true
+}
+
+function handleLogout() {
+  authStore.logout()
+  router.replace('/login')
+}
 </script>
 
 <template>
   <div class="main-layout">
-    <header class="main-layout__nav">智能体课堂</header>
+    <app-navbar @open-settings="openSettings" @logout="handleLogout" />
     <main class="main-layout__body">
       <router-view />
     </main>
+    <settings-modal v-model:show="settingsVisible" />
   </div>
 </template>
 
@@ -16,14 +44,6 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-}
-.main-layout__nav {
-  height: 56px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  padding: 0 24px;
-  border-bottom: 1px solid var(--n-divider-color, #e2e8f0);
 }
 .main-layout__body {
   flex: 1;

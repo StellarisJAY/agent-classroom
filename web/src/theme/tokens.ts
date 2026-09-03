@@ -46,6 +46,36 @@ export const shape = {
     "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif",
 } as const
 
+/** 页面 body 背景色（浅/深），供全局 JS 同步到 body 元素 */
+export function bodyColorFor(theme: 'light' | 'dark'): string {
+  return theme === 'dark' ? palette.slate[900] : '#ffffff'
+}
+
+/** 卡片背景色（浅/深），与 naive cardColor 对齐 */
+export function cardColorFor(theme: 'light' | 'dark'): string {
+  return theme === 'dark' ? palette.slate[800] : '#ffffff'
+}
+
+/** 一级文本色（浅/深），对应 naive textColor1 */
+export function textColor1For(theme: 'light' | 'dark'): string {
+  return theme === 'dark' ? palette.slate[100] : palette.slate[900]
+}
+
+/** 主强调色（浅/深），对应 naive primaryColor */
+export function primaryColorFor(theme: 'light' | 'dark'): string {
+  return theme === 'dark' ? palette.teal[400] : palette.teal[600]
+}
+
+/** 二级文本色（浅/深），对应 naive textColor2 */
+export function textColor2For(theme: 'light' | 'dark'): string {
+  return theme === 'dark' ? palette.slate[400] : palette.slate[500]
+}
+
+/** 分隔线色（浅/深），对应 naive dividerColor */
+export function dividerColorFor(theme: 'light' | 'dark'): string {
+  return theme === 'dark' ? palette.slate[700] : palette.slate[200]
+}
+
 /** 生成 Naive UI themeOverrides */
 export function buildThemeOverrides(theme: 'light' | 'dark'): GlobalThemeOverrides {
   const dark = theme === 'dark'

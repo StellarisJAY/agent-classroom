@@ -19,8 +19,7 @@ body {
     'PingFang SC', 'Microsoft YaHei', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* 主题背景随 Naive 主题，此处仅兜底 */
-  background-color: #ffffff;
+  /* 主题背景随 Naive 主题由 App.vue 动态写入 body 内联样式 */
 }
 
 a {
