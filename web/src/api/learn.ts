@@ -1,11 +1,15 @@
 import * as mock from './learn.mock'
+import { request } from './http'
 import type { ProgressStatusValue } from './course'
 
 /**
  * 学习页领域类型 + 接口签名。
  *
- * 当前实现读取 learn.mock.ts（mock 数据），接口签名与未来后端对齐，
- * 后端就位后仅需把各函数实现换成 axios 请求，store / 组件零改动。
+ * 数据获取策略：
+ * - slide 环节的 content / steps 由真实接口 GET /courses/:id/learn 提供；
+ * - quiz / demo 后端尚未生成真实内容（question 表未建、demo 占位），
+ *   前端以 learn.mock.ts 的示例兜底，后端落地后自然切为真实数据；
+ * - 问答会话 / 进度上报仍为 mock（待对应接口就位后替换）。
  * 数据 schema 严格对齐 docs/slide数据结构.md 与 docs/数据库设计.md。
  */
 
@@ -152,8 +156,8 @@ export interface SectionLearn {
 // ---- 课程学习详情 ----
 
 export interface CourseLearnDetail {
-  course: { id: string; title: string; description: string }
-  /** 当前用户对该课程的学习进度 */
+  course: { id: string; title: string }
+  /** 当前用户对该课程的学习进度（本期后端固定返回 unstarted） */
   progress: ProgressStatusValue
   /** 有序环节列表（按 position） */
   sections: SectionLearn[]
@@ -190,11 +194,22 @@ export type StreamCallback = (delta: string) => void
 // 保持与真实后端一致的异步与增量语义。后端接口就位后，仅需把函数体
 // 换成 axios / fetch（SSE 读取），签名与调用方不变。
 
-/** 拉取课程学习详情（课程 + 进度 + 有序环节） */
+/** 拉取课程学习详情（课程 + 进度 + 有序环节）。
+ *  slide 环节 content/steps 取接口真实数据；quiz/demo 后端未生成则以 mock 兜底。 */
 export async function getCourseDetail(courseId: string): Promise<CourseLearnDetail> {
-  await delay(300)
-  const detail = mock.findCourse(courseId)
-  if (!detail) throw new Error('课程不存在')
+  const detail = await request<CourseLearnDetail>({
+    url: `/courses/${courseId}/learn`,
+    method: 'get',
+  })
+  detail.sections = detail.sections.map((s) => {
+    if (s.type === SectionType.Quiz && !s.questions.length) {
+      return { ...s, questions: [...mock.QUIZ_QUESTIONS] }
+    }
+    if (s.type === SectionType.Demo && !isDemoContent(s.content)) {
+      return { ...s, content: { ...mock.DEMO_CONTENT } }
+    }
+    return s
+  })
   return detail
 }
 
@@ -231,6 +246,11 @@ export async function saveDemoCode(sectionId: string, code: string): Promise<voi
 
 function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
+}
+
+/** 判定某环节 content 是否为有效 demo 内容（含 subtype + code）。 */
+function isDemoContent(content: SectionLearn['content']): content is DemoContent {
+  return !!content && typeof content === 'object' && 'code' in content && 'subtype' in content
 }
 
 function splitChunks(text: string, size: number): string[] {

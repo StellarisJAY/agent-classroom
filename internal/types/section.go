@@ -131,4 +131,7 @@ type SectionService interface {
 	// StreamGeneration 订阅某课程内容生成进度：先回放快照，再实时转发，直到完成/出错/上下文取消。
 	// emit 返回 error 时中止订阅。
 	StreamGeneration(ctx context.Context, userID, courseID ID, emit func(ProgressEvent) error) error
+	// GetLearnDetail 返回课程学习详情：课程摘要 + 有序环节（slide 含 content/steps 产物透传）。
+	// 仅课程 owner 可访问；进度本期固定 unstarted（学习进度上报另行实现）。
+	GetLearnDetail(ctx context.Context, userID, courseID ID) (*CourseLearnDetail, error)
 }

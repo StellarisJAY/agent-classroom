@@ -264,6 +264,44 @@ func (s *SectionService) listProgress(ctx context.Context, courseID types.ID) ([
 	return out, nil
 }
 
+// GetLearnDetail 返回课程学习详情。仅课程 owner 可访问；slide 环节的
+// content / steps 产物以原始 JSON 透传，quiz / demo 环节为占位产物。
+func (s *SectionService) GetLearnDetail(ctx context.Context, userID, courseID types.ID) (*types.CourseLearnDetail, error) {
+	course, err := s.courseRepo.GetByID(ctx, userID, courseID)
+	if err != nil {
+		if errors.Is(err, types.ErrNotFound) {
+			return nil, types.ErrCourseNotFound
+		}
+		return nil, err
+	}
+	secs, err := s.sectionRepo.ListByCourse(ctx, courseID)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]types.SectionLearn, 0, len(secs))
+	for i := range secs {
+		sec := &secs[i]
+		out = append(out, types.SectionLearn{
+			ID:              sec.ID,
+			Position:        sec.Position,
+			Type:            sec.Type,
+			Title:           sec.Title,
+			KnowledgePoints: unmarshalKP(sec.KnowledgePoints),
+			Status:          sec.Status,
+			Content:         json.RawMessage(sec.Content),
+			Steps:           json.RawMessage(sec.Steps),
+			Questions:       []any{},
+		})
+	}
+
+	return &types.CourseLearnDetail{
+		Course:   types.LearnCourse{ID: course.ID, Title: course.Title},
+		Progress: types.ProgressStatusUnstarted,
+		Sections: out,
+	}, nil
+}
+
 // ---- SSE 进度订阅 ----
 
 func (s *SectionService) StreamGeneration(ctx context.Context, userID, courseID types.ID, emit func(types.ProgressEvent) error) error {
@@ -465,10 +503,16 @@ func sectionsToOutline(secs []types.Section) []types.OutlineSection {
 
 // ---- helpers ----
 
+// unmarshalKP 将 jsonb 的知识点列解析为字符串切片；解析失败返回空切片。
+func unmarshalKP(raw datatypes.JSON) []string {
+	kp := make([]string, 0)
+	_ = json.Unmarshal(raw, &kp)
+	return kp
+}
+
 // sectionToProgress 将实体转为进度 DTO（解出知识点列表）。
 func sectionToProgress(s *types.Section) types.SectionProgress {
-	kp := make([]string, 0)
-	_ = json.Unmarshal(s.KnowledgePoints, &kp)
+	kp := unmarshalKP(s.KnowledgePoints)
 	return types.SectionProgress{
 		ID:              s.ID,
 		Position:        s.Position,

@@ -1,16 +1,10 @@
-import type {
-  ChatMessage,
-  CourseLearnDetail,
-  DemoContent,
-  Question,
-  SectionLearn,
-  SlideContent,
-  SlideStep,
-} from './learn'
+import type { ChatMessage, DemoContent, Question } from './learn'
 
 /**
- * learn mock：内存态数据源 + 简易回复生成。
- * 供 learn.ts 在真实后端就位前消费；字段严格对齐 docs 数据 schema。
+ * learn mock：学习页的会话/进度/演示代码的内存态 + quiz/demo 兜底数据。
+ *
+ * slide 环节的 content / steps 已改为从真实接口获取（见 learn.ts getCourseDetail），
+ * 此处不再提供 slide 示例；quiz / demo 后端尚未生成真实内容，故保留示例供前端兜底。
  */
 
 // 内存态
@@ -41,81 +35,9 @@ function seedMessages(courseId: string): ChatMessage[] {
   return list
 }
 
-// ---- 数据构造 ----
+// ---- quiz / demo 兜底数据（后端尚未生成真实内容）----
 
-const SLIDE_CONTENT: SlideContent = {
-  width: 1280,
-  height: 720,
-  background: '#ffffff',
-  accent: '#14b8a6',
-  elements: [
-    {
-      id: 'e1',
-      type: 'text',
-      x: 80,
-      y: 56,
-      width: 1120,
-      content: '一维数组的声明与初始化',
-      style: { fontSize: 40, align: 'left', bold: true, color: '#0f172a' },
-    },
-    {
-      id: 'e2',
-      type: 'text',
-      x: 80,
-      y: 150,
-      width: 760,
-      content: '数组是同类型元素的有序集合\n声明后长度固定，元素按下标访问',
-      style: { fontSize: 26, align: 'left', color: '#334155' },
-    },
-    {
-      id: 'e3',
-      type: 'formula',
-      x: 80,
-      y: 270,
-      content: '\\text{int arr[5] = } \\{1,2,3,4,5\\}',
-      fontSize: 30,
-    },
-    {
-      id: 'e4',
-      type: 'list',
-      x: 80,
-      y: 420,
-      width: 460,
-      ordered: true,
-      items: ['声明', '初始化', '访问'],
-      fontSize: 24,
-    },
-    {
-      id: 'e5',
-      type: 'shape',
-      x: 660,
-      y: 320,
-      width: 150,
-      height: 48,
-      shape: 'rect',
-      fill: '#ccfbf1',
-      stroke: '#14b8a6',
-      label: 'arr[0]',
-    },
-  ],
-}
-
-const SLIDE_STEPS: SlideStep[] = [
-  {
-    text: '首先，数组是同类型元素的集合，存放于连续内存空间。',
-    actions: [{ type: 'highlight', targetElementId: 'e2' }],
-  },
-  {
-    text: '声明语法如下，其中长度需在声明时指定。',
-    actions: [{ type: 'underline', targetElementId: 'e3' }],
-  },
-  {
-    text: '访问元素时使用下标，例如第一个元素写作 arr[0]。',
-    actions: [{ type: 'box', targetElementId: 'e5' }],
-  },
-]
-
-const QUIZ_QUESTIONS: Question[] = [
+export const QUIZ_QUESTIONS: Question[] = [
   {
     id: 'q1',
     position: 1,
@@ -156,7 +78,7 @@ const QUIZ_QUESTIONS: Question[] = [
   },
 ]
 
-const DEMO_CONTENT: DemoContent = {
+export const DEMO_CONTENT: DemoContent = {
   subtype: 'basic',
   code: `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -192,56 +114,6 @@ const DEMO_CONTENT: DemoContent = {
   </script>
 </body>
 </html>`,
-}
-
-// ---- 课程详情 ----
-
-/** 构造一个可学习的示例课程；无论路由传入哪个 id 都返回可学习内容 */
-export function findCourse(courseId: string): CourseLearnDetail | undefined {
-  progressByCourse.set(courseId, progressByCourse.get(courseId) ?? 'in_progress')
-  seedMessages(courseId)
-
-  const sections: SectionLearn[] = [
-    {
-      id: 'sec-slide',
-      position: 1,
-      type: 'slide',
-      title: '一维数组的声明与初始化',
-      knowledge_points: ['数组概念', '声明', '初始化'],
-      status: 'done',
-      content: SLIDE_CONTENT,
-      steps: SLIDE_STEPS,
-      questions: [],
-    },
-    {
-      id: 'sec-quiz',
-      position: 2,
-      type: 'quiz',
-      title: '随堂小测',
-      knowledge_points: ['概念', '下标访问'],
-      status: 'done',
-      content: null,
-      steps: null,
-      questions: QUIZ_QUESTIONS,
-    },
-    {
-      id: 'sec-demo',
-      position: 3,
-      type: 'demo',
-      title: '体验：数组反转',
-      knowledge_points: ['演示'],
-      status: 'done',
-      content: { ...DEMO_CONTENT, code: demoCodeBySection.get('sec-demo') ?? DEMO_CONTENT.code },
-      steps: null,
-      questions: [],
-    },
-  ]
-
-  return {
-    course: { id: courseId, title: '数组入门', description: '理解一维数组的声明、初始化与访问' },
-    progress: progressByCourse.get(courseId) as CourseLearnDetail['progress'],
-    sections,
-  }
 }
 
 // ---- 消息 ----

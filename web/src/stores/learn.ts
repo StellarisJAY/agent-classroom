@@ -24,6 +24,11 @@ export const useLearnStore = defineStore('learn', () => {
   // slide
   const stepIndex = ref(0)
 
+  // 自动播放
+  const autoPlaying = ref(false)
+  const playRate = ref(1)
+  let autoTimer: ReturnType<typeof setTimeout> | null = null
+
   // quiz：questionId -> 已选项下标
   const quizAnswers = ref<Record<string, number[]>>({})
   const quizSubmitted = ref(false)
@@ -80,6 +85,7 @@ export const useLearnStore = defineStore('learn', () => {
   }
 
   function reset() {
+    stopAutoPlay()
     currentIndex.value = 0
     lastVisitedIndex.value = 0
     stepIndex.value = 0
@@ -94,6 +100,7 @@ export const useLearnStore = defineStore('learn', () => {
   }
 
   async function goTo(index: number) {
+    stopAutoPlay()
     const clamped = Math.min(Math.max(index, 0), sections.value.length - 1)
     if (clamped === currentIndex.value) return
     currentIndex.value = clamped
@@ -104,24 +111,69 @@ export const useLearnStore = defineStore('learn', () => {
     demoEditing.value = false
   }
 
-  async function nextSection() {
-    if (hasNextSection.value) {
-      await goTo(currentIndex.value + 1)
-    } else {
-      // 已是最后环节
-    }
-  }
-
-  async function prevSection() {
-    if (hasPrevSection.value) await goTo(currentIndex.value - 1)
-  }
-
   function nextStep() {
+    stopAutoPlay()
     if (stepIndex.value < stepCount.value - 1) stepIndex.value += 1
   }
 
   function prevStep() {
+    stopAutoPlay()
     if (stepIndex.value > 0) stepIndex.value -= 1
+  }
+
+  // ---- 自动播放 ----
+
+  /** 根据讲解文本估算单步停留时长（每字约 280ms，限幅 1.6s~12s），并按倍速换算。 */
+  function estimateDuration(text: string): number {
+    const base = Math.min(12000, Math.max(1600, (text?.length ?? 0) * 280))
+    return Math.round(base / playRate.value)
+  }
+
+  function clearAutoTimer() {
+    if (autoTimer) {
+      clearTimeout(autoTimer)
+      autoTimer = null
+    }
+  }
+
+  function scheduleNext() {
+    clearAutoTimer()
+    if (!autoPlaying.value || !isSlide.value) return
+    const step = currentStep.value
+    if (!step) return
+    autoTimer = setTimeout(() => {
+      if (stepIndex.value < stepCount.value - 1) {
+        stepIndex.value += 1
+        scheduleNext()
+      } else {
+        stopAutoPlay()
+      }
+    }, estimateDuration(step.text))
+  }
+
+  function startAutoPlay() {
+    if (!isSlide.value || autoPlaying.value) return
+    autoPlaying.value = true
+    scheduleNext()
+  }
+
+  function stopAutoPlay() {
+    autoPlaying.value = false
+    clearAutoTimer()
+  }
+
+  function toggleAutoPlay() {
+    if (autoPlaying.value) stopAutoPlay()
+    else startAutoPlay()
+  }
+
+  function setPlayRate(rate: number) {
+    if (!(rate > 0)) return
+    playRate.value = rate
+    if (autoPlaying.value) {
+      clearAutoTimer()
+      scheduleNext()
+    }
   }
 
   // ---- quiz ----
@@ -221,15 +273,17 @@ export const useLearnStore = defineStore('learn', () => {
     demoSectionContent,
     demoEditing,
     demoDraft,
+    autoPlaying,
+    playRate,
     hasPrevSection,
     hasNextSection,
     reachedLast,
     load,
     goTo,
-    nextSection,
-    prevSection,
     nextStep,
     prevStep,
+    toggleAutoPlay,
+    setPlayRate,
     toggleOption,
     isSelected,
     quizAnswers,

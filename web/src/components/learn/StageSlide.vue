@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { NButton, NIcon } from 'naive-ui'
-import { ChevronBack, ChevronForwardOutline } from '@vicons/ionicons5'
 import { renderToString } from 'katex'
 
 import type {
@@ -238,30 +236,6 @@ watch([() => store.stepIndex, () => store.currentIndex], async () => {
         />
       </div>
     </div>
-
-    <div class="stage-slide__footer">
-      <n-button quaternary size="small" :disabled="store.stepIndex === 0" @click="store.prevStep()">
-        <template #icon>
-          <n-icon><ChevronBack /></n-icon>
-        </template>
-        上一步
-      </n-button>
-
-      <span class="stage-slide__counter">
-        步骤 {{ store.stepCount ? store.stepIndex + 1 : 0 }} / {{ store.stepCount }}
-      </span>
-
-      <n-button
-        size="small"
-        :disabled="store.stepIndex >= store.stepCount - 1"
-        @click="store.nextStep()"
-      >
-        下一步
-        <template #icon>
-          <n-icon><ChevronForwardOutline /></n-icon>
-        </template>
-      </n-button>
-    </div>
   </div>
 </template>
 
@@ -359,17 +333,5 @@ watch([() => store.stepIndex, () => store.currentIndex], async () => {
 .stage-overlay.is-underline {
   border: none;
   background: currentColor;
-}
-
-.stage-slide__footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 4px 2px 0;
-}
-.stage-slide__counter {
-  font-size: 13px;
-  color: var(--app-text-2, #64748b);
 }
 </style>

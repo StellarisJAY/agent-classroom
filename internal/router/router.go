@@ -64,6 +64,7 @@ func registerAPI(api *gin.RouterGroup, cfg *config.Config, auth *handler.AuthHan
 		courseGroup.POST("/:id/outline/confirm", section.Confirm)
 		courseGroup.GET("/:id/sections", section.List)
 		courseGroup.GET("/:id/generate", section.Generate)
+		courseGroup.GET("/:id/learn", section.Learn)
 	}
 }
 

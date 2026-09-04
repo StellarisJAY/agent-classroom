@@ -63,6 +63,25 @@ func (h *SectionHandler) List(c *gin.Context) {
 	OK(c, sections)
 }
 
+// Learn 查询课程学习详情（课程摘要 + 有序环节，slide 含 content/steps 产物）。
+func (h *SectionHandler) Learn(c *gin.Context) {
+	userID, ok := currentUser(c)
+	if !ok {
+		return
+	}
+	courseID, err := pathID(c)
+	if err != nil {
+		Error(c, err)
+		return
+	}
+	detail, err := h.svc.GetLearnDetail(c.Request.Context(), userID, courseID)
+	if err != nil {
+		Error(c, err)
+		return
+	}
+	OK(c, detail)
+}
+
 // Generate 订阅某课程内容生成进度（SSE）。事件：snapshot / section / course / done / error。
 func (h *SectionHandler) Generate(c *gin.Context) {
 	userID, ok := currentUser(c)

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { NAlert, NButton } from 'naive-ui'
 
 import type { Question } from '@/api/learn'
 import { useLearnStore } from '@/stores/learn'
@@ -8,10 +7,6 @@ import { useLearnStore } from '@/stores/learn'
 const store = useLearnStore()
 
 const questions = computed<Question[]>(() => store.currentSection?.questions ?? [])
-
-const allAnswered = computed(() =>
-  questions.value.every((q) => (store.quizAnswers[q.id] ?? []).length > 0),
-)
 
 const verdictLabel: Record<'correct' | 'partial' | 'wrong', string> = {
   correct: '回答正确',
@@ -79,20 +74,6 @@ function optionState(q: Question, i: number) {
           </p>
         </div>
       </section>
-    </div>
-
-    <div class="stage-quiz__foot">
-      <n-alert
-        v-if="store.quizSubmitted"
-        type="info"
-        :bordered="false"
-        class="stage-quiz__done-hint"
-      >
-        作答已提交，可对照上方解析回顾。
-      </n-alert>
-      <n-button v-else type="primary" :disabled="!allAnswered" @click="store.submitQuiz()">
-        提交答案
-      </n-button>
     </div>
   </div>
 </template>
@@ -263,14 +244,5 @@ function optionState(q: Question, i: number) {
 }
 .stage-quiz__ex-line strong {
   color: var(--app-text-1, #0f172a);
-}
-
-.stage-quiz__foot {
-  display: flex;
-  justify-content: center;
-  margin-top: 18px;
-}
-.stage-quiz__done-hint {
-  max-width: 480px;
 }
 </style>

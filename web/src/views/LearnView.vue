@@ -6,10 +6,10 @@ import { RefreshOutline } from '@vicons/ionicons5'
 
 import ChatPanel from '@/components/learn/ChatPanel.vue'
 import LeaveButton from '@/components/learn/LeaveButton.vue'
-import SectionToolbar from '@/components/learn/SectionToolbar.vue'
 import StageDemo from '@/components/learn/StageDemo.vue'
 import StageQuiz from '@/components/learn/StageQuiz.vue'
 import StageSlide from '@/components/learn/StageSlide.vue'
+import StageToolbar from '@/components/learn/StageToolbar.vue'
 import TeacherBar from '@/components/learn/TeacherBar.vue'
 import { useConversationStore } from '@/stores/conversation'
 import { useLearnStore } from '@/stores/learn'
@@ -77,15 +77,19 @@ function retry() {
         </n-button>
       </div>
 
-      <template v-else-if="store.currentSection">
+      <div
+        v-else-if="store.currentSection"
+        class="learn-view__stage-inner"
+        :data-type="store.currentSection.type"
+      >
         <StageSlide v-if="store.isSlide" />
         <StageQuiz v-else-if="store.isQuiz" />
         <StageDemo v-else-if="store.isDemo" />
-      </template>
+      </div>
     </main>
 
-    <!-- 环节切换工具栏 -->
-    <section-toolbar v-if="store.detail" class="learn-view__toolbar" />
+    <!-- 统一工具栏：步骤切换/提交(中) + 大纲(右) -->
+    <StageToolbar v-if="store.detail" />
 
     <!-- 底部老师旁白 -->
     <TeacherBar v-if="store.detail" />
@@ -98,7 +102,6 @@ function retry() {
 <style scoped>
 .learn-view {
   height: 100%;
-  min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
@@ -138,6 +141,22 @@ function retry() {
   overflow: hidden;
 }
 
+.learn-view__stage-inner {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+.learn-view__stage-inner[data-type='slide'] {
+  max-width: 1200px;
+}
+.learn-view__stage-inner[data-type='quiz'],
+.learn-view__stage-inner[data-type='demo'] {
+  max-width: 880px;
+}
+
 .learn-view__center {
   margin: auto;
   display: flex;
@@ -149,10 +168,5 @@ function retry() {
 .learn-view__error {
   margin: 0;
   color: var(--app-text-2, #64748b);
-}
-
-.learn-view__toolbar {
-  flex: none;
-  padding: 8px 16px;
 }
 </style>
