@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"path/filepath"
 	"strings"
 
@@ -200,7 +199,7 @@ func (s *CourseService) GenerateOutline(ctx context.Context, userID, courseID ty
 		return nil, types.ErrPromptRequired
 	}
 
-	docsText, err := s.loadDocumentsText(ctx, courseID)
+	docsText, err := loadDocumentsText(ctx, s.docRepo, s.storage, courseID)
 	if err != nil {
 		return nil, err
 	}
@@ -227,11 +226,9 @@ func (s *CourseService) GenerateOutline(ctx context.Context, userID, courseID ty
 		return nil, err
 	}
 	temp := 0.3
-	maxTokens := 4096
 	resp, err := client.Chat(ctx, model.ChatRequest{
 		Messages:    messages,
 		Temperature: &temp,
-		MaxTokens:   &maxTokens,
 		Thinking:    course.Thinking,
 	})
 	if err != nil {
@@ -306,43 +303,6 @@ func (s *CourseService) persistOutline(ctx context.Context, courseID types.ID, c
 		CreateBy: by,
 		UpdateBy: by,
 	})
-}
-
-// loadDocumentsText 读取课程全部参考文档并提取纯文本（截断到预算）。
-func (s *CourseService) loadDocumentsText(ctx context.Context, courseID types.ID) (string, error) {
-	docs, err := s.docRepo.ListByCourse(ctx, courseID)
-	if err != nil {
-		return "", err
-	}
-	var b strings.Builder
-	budget := maxDocRunes
-	for _, d := range docs {
-		if budget <= 0 {
-			break
-		}
-		rc, err := s.storage.Get(ctx, d.URL)
-		if err != nil {
-			continue // 文件缺失不阻断整门课生成
-		}
-		data, rerr := io.ReadAll(rc)
-		rc.Close()
-		if rerr != nil {
-			continue
-		}
-		text, xerr := util.ExtractText(d.Filename, data)
-		if xerr != nil {
-			continue
-		}
-		if budget > 0 && len(text) > budget {
-			text = text[:budget]
-		}
-		budget -= len(text)
-		b.WriteString("\n===== 文档: ")
-		b.WriteString(d.Filename)
-		b.WriteString(" =====\n")
-		b.WriteString(text)
-	}
-	return b.String(), nil
 }
 
 // outlineUserData 用户提示词模板的填充字段。

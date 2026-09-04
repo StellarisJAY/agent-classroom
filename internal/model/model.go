@@ -1,6 +1,9 @@
 package model
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // 本包定义大模型（LLM/TTS）适配层的通用类型与接口。
 // 该层不依赖 types / 服务层，仅依赖标准库，供上层业务按需装配。
@@ -26,6 +29,11 @@ type ProviderConfig struct {
 	Model    string
 	BaseURL  string
 	APIKey   string
+	// Timeout 非流式 Chat 请求超时；<=0 表示不额外设限，跟随调用方传入的 context。
+	// 思考模式 max 时实现可在该基础上放大。
+	Timeout time.Duration
+	// StreamTimeout 流式 ChatStream 请求超时；<=0 表示不额外设限。
+	StreamTimeout time.Duration
 }
 
 // 思考强度（reasoning effort）取值。空串等价于 default。

@@ -10,12 +10,13 @@ import (
 
 	"gorm.io/datatypes"
 
+	"github.com/StellarisJAY/agent-classroom/internal/model"
 	"github.com/StellarisJAY/agent-classroom/internal/types"
 )
 
-// ---- 内容生成器占位实现（框架阶段，仅置占位产物并标记完成） ----
+// ---- 内容生成器占位实现（quiz/demo 尚未落地，仅置占位产物并标记完成） ----
 
-// stubGenerator 框架阶段的环节内容生成器占位：不调用 LLM，仅写入占位产物，
+// stubGenerator quiz/demo 环节的内容生成器占位：不调用 LLM，仅写入占位产物，
 // 用于打通「确认 → 串行生成 → 完成」全链路。真实生成逻辑后续替换对应分派。
 type stubGenerator struct {
 	sectionType string
@@ -29,10 +30,6 @@ func (g *stubGenerator) Generate(_ context.Context, section *types.Section, _ *t
 		return err
 	}
 	section.Content = datatypes.JSON(content)
-	if g.sectionType == types.SectionTypeSlide {
-		steps, _ := json.Marshal([]any{})
-		section.Steps = datatypes.JSON(steps)
-	}
 	return nil
 }
 
@@ -128,6 +125,10 @@ type SectionService struct {
 	outlineRepo types.OutlineRepo
 	sectionRepo types.SectionRepo
 	tm          types.TransactionManager
+	docRepo     types.DocumentRepo
+	storage     types.Storage
+	modelCfgSvc types.ModelConfigService
+	registry    *model.Registry
 	generators  map[string]types.SectionContentGenerator
 	hub         *progressHub
 }
@@ -140,14 +141,22 @@ func NewSectionService(
 	outlineRepo types.OutlineRepo,
 	sectionRepo types.SectionRepo,
 	tm types.TransactionManager,
+	docRepo types.DocumentRepo,
+	storage types.Storage,
+	modelCfgSvc types.ModelConfigService,
+	registry *model.Registry,
 ) types.SectionService {
 	return &SectionService{
 		courseRepo:  courseRepo,
 		outlineRepo: outlineRepo,
 		sectionRepo: sectionRepo,
 		tm:          tm,
+		docRepo:     docRepo,
+		storage:     storage,
+		modelCfgSvc: modelCfgSvc,
+		registry:    registry,
 		generators: map[string]types.SectionContentGenerator{
-			types.SectionTypeSlide: &stubGenerator{sectionType: types.SectionTypeSlide},
+			types.SectionTypeSlide: &slideGenerator{},
 			types.SectionTypeQuiz:  &stubGenerator{sectionType: types.SectionTypeQuiz},
 			types.SectionTypeDemo:  &stubGenerator{sectionType: types.SectionTypeDemo},
 		},
@@ -221,7 +230,7 @@ func (s *SectionService) ConfirmOutline(ctx context.Context, userID, courseID ty
 	}
 
 	// 事务提交后再启动后台串行生成。
-	s.ensureLoop(courseID)
+	s.ensureLoop(userID, course)
 
 	progs := make([]types.SectionProgress, 0, len(rows))
 	for i := range rows {
@@ -291,7 +300,7 @@ func (s *SectionService) StreamGeneration(ctx context.Context, userID, courseID 
 	}
 
 	// 先订阅再启动/恢复循环，避免漏事件。
-	s.ensureLoop(courseID)
+	s.ensureLoop(userID, course)
 
 	// 快照：先让前端渲染当前全部进度，后续事件按 position 增量更新。
 	if secs, lerr := s.listProgress(ctx, courseID); lerr == nil {
@@ -325,34 +334,41 @@ func (s *SectionService) StreamGeneration(ctx context.Context, userID, courseID 
 // ---- 串行生成 ----
 
 // ensureLoop 保证单课程只跑一个生成循环；如未在跑则启动（含崩溃后恢复续跑）。
-func (s *SectionService) ensureLoop(courseID types.ID) {
-	f := s.hub.feed(courseID)
+func (s *SectionService) ensureLoop(userID types.ID, course *types.Course) {
+	f := s.hub.feed(course.ID)
 	if !f.tryStart() {
 		return
 	}
-	go s.runGeneration(courseID, f)
+	go s.runGeneration(userID, course, f)
 }
 
 // runGeneration 串行生成课程全部未完成环节。任何一处失败即中止并广播 error。
-func (s *SectionService) runGeneration(courseID types.ID, f *courseFeed) {
+func (s *SectionService) runGeneration(userID types.ID, course *types.Course, f *courseFeed) {
 	ctx := context.Background()
 	defer f.finish()
 
-	if err := s.courseRepo.UpdateStatus(ctx, courseID, types.CourseStatusGenerating); err != nil {
+	genCtx, err := s.buildGenerationContext(ctx, userID, course)
+	if err != nil {
+		slog.Error("build generation context failed", "course_id", course.ID.String(), "error", err)
 		f.broadcast(types.ProgressEvent{Type: "error", Message: types.ErrContentGenerate.Msg})
 		return
 	}
 
-	secs, err := s.sectionRepo.ListByCourse(ctx, courseID)
+	if err := s.courseRepo.UpdateStatus(ctx, course.ID, types.CourseStatusGenerating); err != nil {
+		f.broadcast(types.ProgressEvent{Type: "error", Message: types.ErrContentGenerate.Msg})
+		return
+	}
+
+	secs, err := s.sectionRepo.ListByCourse(ctx, course.ID)
 	if err != nil {
 		f.broadcast(types.ProgressEvent{Type: "error", Message: types.ErrContentGenerate.Msg})
 		return
 	}
 
-	genCtx := types.GenerationContext{}
 	for i := range secs {
 		sec := &secs[i]
 		if sec.Status == types.SectionStatusDone {
+			genCtx.Done = append(genCtx.Done, *sec)
 			continue
 		}
 		if err := s.sectionRepo.UpdateStatus(ctx, sec.ID, types.SectionStatusGenerating); err != nil {
@@ -383,13 +399,68 @@ func (s *SectionService) runGeneration(courseID types.ID, f *courseFeed) {
 		}
 		sp.Status = types.SectionStatusDone
 		f.broadcast(types.ProgressEvent{Type: "section", Index: i, Section: sp})
+		genCtx.Done = append(genCtx.Done, *sec)
 	}
 
-	if err := s.courseRepo.UpdateStatus(ctx, courseID, types.CourseStatusCompleted); err != nil {
+	if err := s.courseRepo.UpdateStatus(ctx, course.ID, types.CourseStatusCompleted); err != nil {
 		f.broadcast(types.ProgressEvent{Type: "error", Message: types.ErrContentGenerate.Msg})
 		return
 	}
 	f.broadcast(types.ProgressEvent{Type: "course", Status: types.CourseStatusCompleted})
+}
+
+// buildGenerationContext 解析模型配置、构造客户端、加载文档与全量大纲，
+// 组装传给各环节内容生成器的上下文。
+func (s *SectionService) buildGenerationContext(ctx context.Context, userID types.ID, course *types.Course) (types.GenerationContext, error) {
+	var cfg model.ProviderConfig
+	var err error
+	if course.ModelConfigID != nil && *course.ModelConfigID != types.NilID {
+		cfg, err = s.modelCfgSvc.ResolveByID(ctx, userID, *course.ModelConfigID)
+	} else {
+		cfg, err = s.modelCfgSvc.ResolveDefault(ctx, userID)
+	}
+	if err != nil {
+		return types.GenerationContext{}, err
+	}
+	if cfg.Model == "" || cfg.APIKey == "" {
+		return types.GenerationContext{}, types.ErrNoModelConfig
+	}
+	client := s.registry.NewLLM(cfg)
+	if client == nil {
+		return types.GenerationContext{}, types.ErrNoModelConfig
+	}
+
+	secs, err := s.sectionRepo.ListByCourse(ctx, course.ID)
+	if err != nil {
+		return types.GenerationContext{}, err
+	}
+	docsText, err := loadDocumentsText(ctx, s.docRepo, s.storage, course.ID)
+	if err != nil {
+		return types.GenerationContext{}, err
+	}
+
+	return types.GenerationContext{
+		Course:          course,
+		OutlineSections: sectionsToOutline(secs),
+		DocsText:        docsText,
+		Client:          client,
+		Thinking:        course.Thinking,
+	}, nil
+}
+
+// sectionsToOutline 将物化环节转换为大纲结构（标题/类型/知识点），供连贯性参考。
+func sectionsToOutline(secs []types.Section) []types.OutlineSection {
+	out := make([]types.OutlineSection, 0, len(secs))
+	for i := range secs {
+		kp := make([]string, 0)
+		_ = json.Unmarshal(secs[i].KnowledgePoints, &kp)
+		out = append(out, types.OutlineSection{
+			Title:           secs[i].Title,
+			Type:            secs[i].Type,
+			KnowledgePoints: kp,
+		})
+	}
+	return out
 }
 
 // ---- helpers ----

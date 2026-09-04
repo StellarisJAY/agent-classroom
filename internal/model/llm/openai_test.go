@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -14,14 +15,19 @@ import (
 
 func newTestClient(t *testing.T, handler http.HandlerFunc) model.LLMClient {
 	t.Helper()
+	return newTestClientCfg(t, model.ProviderConfig{}, handler)
+}
+
+// newTestClientCfg 用给定配置（含超时）构造 client。
+func newTestClientCfg(t *testing.T, cfg model.ProviderConfig, handler http.HandlerFunc) model.LLMClient {
+	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	return NewOpenAICompatible(model.ProviderConfig{
-		Provider: "openai",
-		Model:    "test-model",
-		BaseURL:  srv.URL,
-		APIKey:   "sk-test",
-	})
+	cfg.Provider = "openai"
+	cfg.Model = "test-model"
+	cfg.BaseURL = srv.URL
+	cfg.APIKey = "sk-test"
+	return NewOpenAICompatible(cfg)
 }
 
 func TestChat(t *testing.T) {
@@ -131,4 +137,62 @@ func TestChatUpstreamError(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, http.StatusUnauthorized, ue.StatusCode)
 	require.Equal(t, "invalid api key", ue.Message)
+}
+
+// 非流式请求超过配置超时应返回 deadline 错误。
+func TestChatTimeout(t *testing.T) {
+	client := newTestClientCfg(t, model.ProviderConfig{Timeout: 50 * time.Millisecond}, func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(500 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"x"}}]}`))
+	})
+	_, err := client.Chat(context.Background(), model.ChatRequest{
+		Messages: []model.ChatMessage{{Role: model.RoleUser, Content: "hi"}},
+	})
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+// 思考模式 max 时超时放大：相同耗时下 max 不超时、非 max 超时。
+func TestChatThinkingMaxExtendsTimeout(t *testing.T) {
+	// base 200ms，max 放大到 300ms。服务端耗时 250ms：max 成功（300ms 内）。
+	client := newTestClientCfg(t, model.ProviderConfig{Timeout: 200 * time.Millisecond}, func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(250 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"x"}}]}`))
+	})
+	_, err := client.Chat(context.Background(), model.ChatRequest{
+		Messages: []model.ChatMessage{{Role: model.RoleUser, Content: "hi"}},
+		Thinking: model.ThinkingMax,
+	})
+	require.NoError(t, err, "thinking=max 应放大超时而不超时")
+
+	// 同一耗时，非 max（200ms）应超时。
+	client2 := newTestClientCfg(t, model.ProviderConfig{Timeout: 200 * time.Millisecond}, func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(250 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"x"}}]}`))
+	})
+	_, err2 := client2.Chat(context.Background(), model.ChatRequest{
+		Messages: []model.ChatMessage{{Role: model.RoleUser, Content: "hi"}},
+	})
+	require.ErrorIs(t, err2, context.DeadlineExceeded, "非 max 思考应命中基础超时")
+}
+
+// 流式不设限（StreamTimeout=0）时不应被超时截断。
+func TestChatStreamNoTimeoutByDefault(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		require.True(t, ok)
+		flusher.Flush()
+		time.Sleep(80 * time.Millisecond)
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"好\"}}]}\n\ndata: [DONE]\n\n"))
+		flusher.Flush()
+	})
+	var got string
+	err := client.ChatStream(context.Background(), model.ChatRequest{
+		Messages: []model.ChatMessage{{Role: model.RoleUser, Content: "hi"}},
+	}, func(delta string) error {
+		got += delta
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, "好", got)
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 
+	"github.com/StellarisJAY/agent-classroom/internal/model"
 	"github.com/StellarisJAY/agent-classroom/internal/types"
 )
 
@@ -47,8 +48,51 @@ func (m *mockSectionRepo) UpdateContentSteps(_ context.Context, id types.ID, con
 	return nil
 }
 
+// seqLLM 按调用次序返回内容：阶段一(content JSON)、阶段二(steps JSON)，用于 Slide 真生成路径。
+type seqLLM struct {
+	mu       sync.Mutex
+	contents []string
+	err      error
+}
+
+func (f *seqLLM) Chat(_ context.Context, _ model.ChatRequest) (*model.ChatResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return nil, f.err
+	}
+	if len(f.contents) == 0 {
+		return &model.ChatResponse{Content: `{"width":1280,"height":720,"background":"#fff","accent":"#14b8a6","elements":[{"id":"e1","type":"text","content":"标题"}]}`}, nil
+	}
+	c := f.contents[0]
+	f.contents = f.contents[1:]
+	return &model.ChatResponse{Content: c}, nil
+}
+
+func (f *seqLLM) ChatStream(context.Context, model.ChatRequest, model.StreamCallback) error {
+	return nil
+}
+
+const (
+	testSlideContentJSON = `{"width":1280,"height":720,"background":"#ffffff","accent":"#14b8a6","elements":[{"id":"e1","type":"text","content":"数组的定义"},{"id":"e2","type":"shape","shape":"rect","label":"arr[0]"}]}`
+	testSlideStepsJSON   = `[{"text":"数组是……","actions":[{"type":"highlight","targetElementId":"e1"}]},{"text":"看第一个元素。","actions":[{"type":"box","targetElementId":"e2"}]}]`
+)
+
 func newSectionSvc(course types.CourseRepo, outline types.OutlineRepo, sec types.SectionRepo) types.SectionService {
-	return NewSectionService(course, outline, sec, passTM{})
+	return NewSectionService(course, outline, sec, passTM{}, &mockDocRepo{}, &mockStorage{}, &mockModelCfgSvc{
+		resolve: func() (model.ProviderConfig, error) {
+			return model.ProviderConfig{Provider: "test", Model: "m", APIKey: "k"}, nil
+		},
+	}, testRegistry())
+}
+
+// testRegistry 注册 test provider，返回按次产出 content/steps 的 Slide LLM。
+func testRegistry() *model.Registry {
+	registry := model.NewRegistry()
+	registry.RegisterLLM("test", func(model.ProviderConfig) model.LLMClient {
+		return &seqLLM{contents: []string{testSlideContentJSON, testSlideStepsJSON}}
+	})
+	return registry
 }
 
 func TestConfirmOutlineRejectsNonDraft(t *testing.T) {

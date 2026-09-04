@@ -190,10 +190,12 @@ func (s *ModelConfigService) ResolveDefault(ctx context.Context, userID types.ID
 	}
 	d := s.cfg.Model.Default
 	return model.ProviderConfig{
-		Provider: d.Provider,
-		Model:    d.Model,
-		BaseURL:  d.BaseURL,
-		APIKey:   d.APIKey,
+		Provider:      d.Provider,
+		Model:         d.Model,
+		BaseURL:       d.BaseURL,
+		APIKey:        d.APIKey,
+		Timeout:       s.cfg.Model.Timeout,
+		StreamTimeout: s.cfg.Model.StreamTimeout,
 	}, nil
 }
 
@@ -216,10 +218,12 @@ func (s *ModelConfigService) resolveConfig(m *types.UserModelConfig) (model.Prov
 		return model.ProviderConfig{}, fmt.Errorf("decrypt model api key: %w", err)
 	}
 	return model.ProviderConfig{
-		Provider: m.Provider,
-		Model:    m.Model,
-		BaseURL:  m.BaseURL,
-		APIKey:   key,
+		Provider:      m.Provider,
+		Model:         m.Model,
+		BaseURL:       m.BaseURL,
+		APIKey:        key,
+		Timeout:       s.cfg.Model.Timeout,
+		StreamTimeout: s.cfg.Model.StreamTimeout,
 	}, nil
 }
 

@@ -3,7 +3,6 @@ package llm
 import (
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/StellarisJAY/agent-classroom/internal/model"
 )
@@ -28,10 +27,12 @@ func (e *UpstreamError) Error() string {
 	return fmt.Sprintf("model upstream error (status %d): %s", e.StatusCode, e.Message)
 }
 
-// NewOpenAICompatible 构造 OpenAI 兼容客户端（默认 60s 超时）。
+// NewOpenAICompatible 构造 OpenAI 兼容客户端。
+// 不做客户端级整体超时：改为请求级 context 超时，便于非流式/流式/思考模式差异化控制
+// （见 openai.go 的 requestContext，时长来自 ProviderConfig.Timeout / StreamTimeout）。
 func NewOpenAICompatible(cfg model.ProviderConfig) model.LLMClient {
 	return &openaiClient{
 		cfg:        cfg,
-		httpClient: &http.Client{Timeout: 60 * time.Second},
+		httpClient: &http.Client{},
 	}
 }

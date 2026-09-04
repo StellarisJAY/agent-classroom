@@ -41,6 +41,10 @@ model:
     model: gpt-4o-mini
     base_url: https://api.openai.com/v1
     api_key: ""
+  # 非流式请求（大纲 / 环节内容生成）超时；思考模式 max 时自动放大 1.5 倍
+  timeout: 300s
+  # 流式请求（问答）超时；0 表示不限制，由上层 context 控制
+  stream_timeout: 0s
 
 log:
   level: info          # debug | info | warn | error

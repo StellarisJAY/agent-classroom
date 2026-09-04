@@ -5,8 +5,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/StellarisJAY/agent-classroom/internal/model"
 )
@@ -61,6 +64,9 @@ type chatCompletionChunk struct {
 }
 
 func (c *openaiClient) Chat(ctx context.Context, req model.ChatRequest) (*model.ChatResponse, error) {
+	ctx, cancel := c.requestContext(ctx, c.cfg.Timeout, req.Thinking)
+	defer cancel()
+
 	payload := chatCompletionRequest{
 		Model:           c.cfg.Model,
 		Messages:        req.Messages,
@@ -79,12 +85,22 @@ func (c *openaiClient) Chat(ctx context.Context, req model.ChatRequest) (*model.
 		return nil, readUpstreamError(resp)
 	}
 	var parsed chatCompletionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
 		return nil, err
 	}
+
+	slog.Debug("openai raw resp", "raw", string(raw))
+
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return nil, err
+	}
+
 	if parsed.Error != nil {
 		return nil, &UpstreamError{StatusCode: resp.StatusCode, Message: parsed.Error.Message}
 	}
+
+	slog.Debug("parsed resp", "data", parsed)
 	content := ""
 	if len(parsed.Choices) > 0 {
 		content = parsed.Choices[0].Message.Content
@@ -93,6 +109,10 @@ func (c *openaiClient) Chat(ctx context.Context, req model.ChatRequest) (*model.
 }
 
 func (c *openaiClient) ChatStream(ctx context.Context, req model.ChatRequest, onDelta model.StreamCallback) error {
+	// 流式输出持续时长不定，仅按 StreamTimeout 设限（不做思考模式放大），通常依赖上层 context 取消。
+	ctx, cancel := c.requestContext(ctx, c.cfg.StreamTimeout, "")
+	defer cancel()
+
 	payload := chatCompletionRequest{
 		Model:           c.cfg.Model,
 		Messages:        req.Messages,
@@ -152,6 +172,19 @@ func (c *openaiClient) do(ctx context.Context, payload any) (*http.Response, err
 
 func (c *openaiClient) endpoint() string {
 	return strings.TrimRight(c.cfg.BaseURL, "/") + "/chat/completions"
+}
+
+// requestContext 为一次请求派生带超时的 context。
+// base <= 0 时不额外设限，原样返回调用方 ctx。
+// 非流式在 thinking=max（深度思考）时放大 1.5 倍，覆盖长推理耗时。
+func (c *openaiClient) requestContext(ctx context.Context, base time.Duration, thinking string) (context.Context, context.CancelFunc) {
+	if base <= 0 {
+		return ctx, func() {}
+	}
+	if thinking == model.ThinkingMax {
+		base = base * 3 / 2
+	}
+	return context.WithTimeout(ctx, base)
 }
 
 // readUpstreamError 读取非 2xx 响应中的 error.message 构造 UpstreamError。
