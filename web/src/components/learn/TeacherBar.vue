@@ -94,8 +94,10 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .teacher-bar {
+  flex: 0 0 120px;
+  min-height: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   padding: 10px 14px;
   border-top: 1px solid var(--app-divider, #e2e8f0);
@@ -119,9 +121,11 @@ onBeforeUnmount(() => {
 .teacher-bar__narration {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  overflow-y: auto;
 }
 .teacher-bar__label {
   flex: none;

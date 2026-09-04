@@ -139,10 +139,10 @@ const playRateLabel = computed(() => `${store.playRate}x`)
 
 <style scoped>
 .stage-toolbar {
-  flex: none;
+  flex: 0 0 44px;
   display: flex;
   align-items: center;
-  padding: 8px 16px;
+  padding: 0 16px;
   border-top: 1px solid var(--app-divider, #e2e8f0);
 }
 

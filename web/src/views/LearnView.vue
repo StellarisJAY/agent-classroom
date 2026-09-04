@@ -107,7 +107,7 @@ function retry() {
 }
 
 .learn-view__header {
-  flex: none;
+  flex: 0 0 44px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -134,7 +134,7 @@ function retry() {
 }
 
 .learn-view__stage {
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
