@@ -48,6 +48,26 @@ func (m *mockSectionRepo) UpdateContentSteps(_ context.Context, id types.ID, con
 	return nil
 }
 
+type mockQuestionRepo struct {
+	replaceBy func(types.ID, []types.Question) error
+	listBy    func(types.ID) ([]types.Question, error)
+}
+
+var _ types.QuestionRepo = (*mockQuestionRepo)(nil)
+
+func (m *mockQuestionRepo) ReplaceBySection(_ context.Context, sectionID types.ID, qs []types.Question) error {
+	if m.replaceBy != nil {
+		return m.replaceBy(sectionID, qs)
+	}
+	return nil
+}
+func (m *mockQuestionRepo) ListBySection(_ context.Context, sectionID types.ID) ([]types.Question, error) {
+	if m.listBy != nil {
+		return m.listBy(sectionID)
+	}
+	return nil, nil
+}
+
 // seqLLM 按调用次序返回内容：阶段一(content JSON)、阶段二(steps JSON)，用于 Slide 真生成路径。
 type seqLLM struct {
 	mu       sync.Mutex
@@ -74,23 +94,36 @@ func (f *seqLLM) ChatStream(context.Context, model.ChatRequest, model.StreamCall
 }
 
 const (
-	testSlideContentJSON = `{"width":1280,"height":720,"background":"#ffffff","accent":"#14b8a6","elements":[{"id":"e1","type":"text","content":"数组的定义"},{"id":"e2","type":"shape","shape":"rect","label":"arr[0]"}]}`
-	testSlideStepsJSON   = `[{"text":"数组是……","actions":[{"type":"highlight","targetElementId":"e1"}]},{"text":"看第一个元素。","actions":[{"type":"box","targetElementId":"e2"}]}]`
+	testSlideContentJSON  = `{"width":1280,"height":720,"background":"#ffffff","accent":"#14b8a6","elements":[{"id":"e1","type":"text","content":"数组的定义"},{"id":"e2","type":"shape","shape":"rect","label":"arr[0]"}]}`
+	testSlideStepsJSON    = `[{"text":"数组是……","actions":[{"type":"highlight","targetElementId":"e1"}]},{"text":"看第一个元素。","actions":[{"type":"box","targetElementId":"e2"}]}]`
+	testQuizQuestionsJSON = `[{"type":"single","stem":"数组下标从几开始？","options":["0","1"],"answers":[0],"explanations":["下标从 0 开始","错误"]},{"type":"multiple","stem":"数组特点？","options":["连续","同类型","长度可变"],"answers":[0,1],"explanations":["正确","正确","错误"]}]`
 )
 
 func newSectionSvc(course types.CourseRepo, outline types.OutlineRepo, sec types.SectionRepo) types.SectionService {
-	return NewSectionService(course, outline, sec, passTM{}, &mockDocRepo{}, &mockStorage{}, &mockModelCfgSvc{
+	return NewSectionService(course, outline, sec, &mockQuestionRepo{}, passTM{}, &mockDocRepo{}, &mockStorage{}, &mockModelCfgSvc{
 		resolve: func() (model.ProviderConfig, error) {
 			return model.ProviderConfig{Provider: "test", Model: "m", APIKey: "k"}, nil
 		},
 	}, testRegistry())
 }
 
-// testRegistry 注册 test provider，返回按次产出 content/steps 的 Slide LLM。
-func testRegistry() *model.Registry {
+// newSectionSvcFull 带自定义 questionRepo 与注册表构造，供走真实生成（含 quiz）的测试使用。
+func newSectionSvcFull(course types.CourseRepo, outline types.OutlineRepo, sec types.SectionRepo, question types.QuestionRepo, registry *model.Registry) types.SectionService {
+	return NewSectionService(course, outline, sec, question, passTM{}, &mockDocRepo{}, &mockStorage{}, &mockModelCfgSvc{
+		resolve: func() (model.ProviderConfig, error) {
+			return model.ProviderConfig{Provider: "test", Model: "m", APIKey: "k"}, nil
+		},
+	}, registry)
+}
+
+// testRegistry 注册 test provider，按序产出给定 LLM 响应（缺省 Slide content/steps）。
+func testRegistry(contents ...string) *model.Registry {
+	if len(contents) == 0 {
+		contents = []string{testSlideContentJSON, testSlideStepsJSON}
+	}
 	registry := model.NewRegistry()
 	registry.RegisterLLM("test", func(model.ProviderConfig) model.LLMClient {
-		return &seqLLM{contents: []string{testSlideContentJSON, testSlideStepsJSON}}
+		return &seqLLM{contents: contents}
 	})
 	return registry
 }
@@ -191,7 +224,9 @@ func TestStreamGenerationSerialCompletion(t *testing.T) {
 	}
 
 	var completedStatus string
-	svc := newSectionSvc(
+	var replacedBy map[types.ID][]types.Question
+	var qMu sync.Mutex
+	svc := newSectionSvcFull(
 		&mockCourseRepo{
 			getByID: func(_, _ types.ID) (*types.Course, error) {
 				c := sampleCourse(cid, uid, types.CourseStatusOutlineConfirmed, false)
@@ -208,6 +243,18 @@ func TestStreamGenerationSerialCompletion(t *testing.T) {
 				return cp, nil
 			},
 		},
+		&mockQuestionRepo{
+			replaceBy: func(sectionID types.ID, qs []types.Question) error {
+				qMu.Lock()
+				defer qMu.Unlock()
+				if replacedBy == nil {
+					replacedBy = map[types.ID][]types.Question{}
+				}
+				replacedBy[sectionID] = qs
+				return nil
+			},
+		},
+		testRegistry(testSlideContentJSON, testSlideStepsJSON, testQuizQuestionsJSON),
 	)
 
 	var events []types.ProgressEvent
@@ -232,4 +279,9 @@ func TestStreamGenerationSerialCompletion(t *testing.T) {
 		}
 	}
 	require.Equal(t, 2, doneSec, "两个环节都应串行完成")
+
+	qMu.Lock()
+	defer qMu.Unlock()
+	quizSec := sections[1]
+	require.Len(t, replacedBy[quizSec.ID], 2, "quiz 环节应把生成题目写入 questionRepo")
 }

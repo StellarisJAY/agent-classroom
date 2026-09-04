@@ -1,10 +1,10 @@
-import type { ChatMessage, DemoContent, Question } from './learn'
+import type { ChatMessage, DemoContent } from './learn'
 
 /**
- * learn mock：学习页的会话/进度/演示代码的内存态 + quiz/demo 兜底数据。
+ * learn mock：学习页的会话/进度/演示代码的内存态 + demo 兜底数据。
  *
- * slide 环节的 content / steps 已改为从真实接口获取（见 learn.ts getCourseDetail），
- * 此处不再提供 slide 示例；quiz / demo 后端尚未生成真实内容，故保留示例供前端兜底。
+ * slide 的 content/steps 与 quiz 的题目已改为从真实接口获取（见 learn.ts getCourseDetail，
+ * quiz 题目来自后端 question 表）；demo 后端尚未生成真实内容，故仅保留 demo 兜底。
  */
 
 // 内存态
@@ -35,48 +35,7 @@ function seedMessages(courseId: string): ChatMessage[] {
   return list
 }
 
-// ---- quiz / demo 兜底数据（后端尚未生成真实内容）----
-
-export const QUIZ_QUESTIONS: Question[] = [
-  {
-    id: 'q1',
-    position: 1,
-    type: 'single',
-    stem: '以下对数组的描述，哪一项是正确的？',
-    options: [
-      '数组可以存放不同类型的元素',
-      '数组是一段连续内存里的同类型元素集合',
-      '数组长度可以在运行时随意改变',
-      '数组下标从 1 开始计数',
-    ],
-    answers: [1],
-    explanations: [
-      '错误：同一数组内元素类型一致。',
-      '正确：数组是连续内存上的同类型元素集合。',
-      '错误：数组长度在声明后固定。',
-      '错误：数组下标从 0 开始。',
-    ],
-  },
-  {
-    id: 'q2',
-    position: 2,
-    type: 'multiple',
-    stem: '关于数组的初始化与访问，下列说法正确的有？',
-    options: [
-      '使用大括号 {1,2,3,4,5} 进行初始化',
-      '下标从 0 开始，因此首元素是 arr[0]',
-      '可以对数组进行整体赋值后再改变长度',
-      '长度在声明时确定，之后保持不变',
-    ],
-    answers: [0, 1, 3],
-    explanations: [
-      '正确：初始化时以大括号给出各元素初值。',
-      '正确：数组下标从 0 起，首元素为 arr[0]。',
-      '错误：数组不支持运行时改变长度。',
-      '正确：声明后长度固定。',
-    ],
-  },
-]
+// ---- demo 兜底数据（后端尚未生成真实内容）----
 
 export const DEMO_CONTENT: DemoContent = {
   subtype: 'basic',

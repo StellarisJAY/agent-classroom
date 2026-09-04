@@ -48,3 +48,18 @@ var slideStepsUserPromptTpl string
 
 // slideStepsUserTpl 解析后的阶段二 user 模板。
 var slideStepsUserTpl = template.Must(template.New("slide_steps_user").Parse(slideStepsUserPromptTpl))
+
+// ---- Quiz 环节生成（单阶段） ----
+
+// quizSystemPrompt Quiz 的 system 提示词。
+//
+//go:embed prompts/quiz.md
+var quizSystemPrompt string
+
+// quizUserPromptTpl Quiz user 提示词模板源码。
+//
+//go:embed prompts/quiz_user.md
+var quizUserPromptTpl string
+
+// quizUserTpl 解析后的 Quiz user 模板。
+var quizUserTpl = template.Must(template.New("quiz_user").Parse(quizUserPromptTpl))

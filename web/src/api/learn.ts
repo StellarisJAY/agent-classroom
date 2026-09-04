@@ -6,9 +6,9 @@ import type { ProgressStatusValue } from './course'
  * 学习页领域类型 + 接口签名。
  *
  * 数据获取策略：
- * - slide 环节的 content / steps 由真实接口 GET /courses/:id/learn 提供；
- * - quiz / demo 后端尚未生成真实内容（question 表未建、demo 占位），
- *   前端以 learn.mock.ts 的示例兜底，后端落地后自然切为真实数据；
+ * - slide / quiz 环节由真实接口 GET /courses/:id/learn 提供
+ *   （quiz 题目来自后端 question 表）；
+ * - demo 后端尚未生成真实内容（仍占位），前端以 learn.mock.ts 兜底；
  * - 问答会话 / 进度上报仍为 mock（待对应接口就位后替换）。
  * 数据 schema 严格对齐 docs/slide数据结构.md 与 docs/数据库设计.md。
  */
@@ -195,16 +195,13 @@ export type StreamCallback = (delta: string) => void
 // 换成 axios / fetch（SSE 读取），签名与调用方不变。
 
 /** 拉取课程学习详情（课程 + 进度 + 有序环节）。
- *  slide 环节 content/steps 取接口真实数据；quiz/demo 后端未生成则以 mock 兜底。 */
+ *  slide / quiz 取接口真实数据；demo 后端未生成则以 mock 兜底。 */
 export async function getCourseDetail(courseId: string): Promise<CourseLearnDetail> {
   const detail = await request<CourseLearnDetail>({
     url: `/courses/${courseId}/learn`,
     method: 'get',
   })
   detail.sections = detail.sections.map((s) => {
-    if (s.type === SectionType.Quiz && !s.questions.length) {
-      return { ...s, questions: [...mock.QUIZ_QUESTIONS] }
-    }
     if (s.type === SectionType.Demo && !isDemoContent(s.content)) {
       return { ...s, content: { ...mock.DEMO_CONTENT } }
     }

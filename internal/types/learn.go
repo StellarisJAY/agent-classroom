@@ -14,18 +14,18 @@ type LearnCourse struct {
 
 // SectionLearn 学习视图环节：含生成产物 content / steps。
 type SectionLearn struct {
-	ID              ID              `json:"id"`
-	Position        int             `json:"position"`
-	Type            string          `json:"type"`
-	Title           string          `json:"title"`
-	KnowledgePoints []string        `json:"knowledge_points"`
-	Status          string          `json:"status"`
+	ID              ID       `json:"id"`
+	Position        int      `json:"position"`
+	Type            string   `json:"type"`
+	Title           string   `json:"title"`
+	KnowledgePoints []string `json:"knowledge_points"`
+	Status          string   `json:"status"`
 	// Content 按 type 区分的生成产物（slide: SlideContent；quiz/demo: 占位对象或 null）。
 	Content json.RawMessage `json:"content"`
 	// Steps slide 讲解步骤（仅 slide 使用）；其余为 null。
 	Steps json.RawMessage `json:"steps"`
-	// Questions 恒为空数组（question 表尚未落地，quiz 生成暂未实现）。
-	Questions []any `json:"questions"`
+	// Questions quiz 题目列表（仅 quiz 使用）；其余为空数组。
+	Questions []LearnQuestion `json:"questions"`
 }
 
 // CourseLearnDetail 课程学习详情。

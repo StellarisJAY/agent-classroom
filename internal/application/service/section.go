@@ -14,9 +14,9 @@ import (
 	"github.com/StellarisJAY/agent-classroom/internal/types"
 )
 
-// ---- 内容生成器占位实现（quiz/demo 尚未落地，仅置占位产物并标记完成） ----
+// ---- 内容生成器占位实现（demo 尚未落地，仅置占位产物并标记完成） ----
 
-// stubGenerator quiz/demo 环节的内容生成器占位：不调用 LLM，仅写入占位产物，
+// stubGenerator demo 环节的内容生成器占位：不调用 LLM，仅写入占位产物，
 // 用于打通「确认 → 串行生成 → 完成」全链路。真实生成逻辑后续替换对应分派。
 type stubGenerator struct {
 	sectionType string
@@ -121,16 +121,17 @@ func (f *courseFeed) finish() {
 
 // SectionService 课程环节内容生成业务实现。
 type SectionService struct {
-	courseRepo  types.CourseRepo
-	outlineRepo types.OutlineRepo
-	sectionRepo types.SectionRepo
-	tm          types.TransactionManager
-	docRepo     types.DocumentRepo
-	storage     types.Storage
-	modelCfgSvc types.ModelConfigService
-	registry    *model.Registry
-	generators  map[string]types.SectionContentGenerator
-	hub         *progressHub
+	courseRepo   types.CourseRepo
+	outlineRepo  types.OutlineRepo
+	sectionRepo  types.SectionRepo
+	questionRepo types.QuestionRepo
+	tm           types.TransactionManager
+	docRepo      types.DocumentRepo
+	storage      types.Storage
+	modelCfgSvc  types.ModelConfigService
+	registry     *model.Registry
+	generators   map[string]types.SectionContentGenerator
+	hub          *progressHub
 }
 
 var _ types.SectionService = (*SectionService)(nil)
@@ -140,6 +141,7 @@ func NewSectionService(
 	courseRepo types.CourseRepo,
 	outlineRepo types.OutlineRepo,
 	sectionRepo types.SectionRepo,
+	questionRepo types.QuestionRepo,
 	tm types.TransactionManager,
 	docRepo types.DocumentRepo,
 	storage types.Storage,
@@ -147,17 +149,18 @@ func NewSectionService(
 	registry *model.Registry,
 ) types.SectionService {
 	return &SectionService{
-		courseRepo:  courseRepo,
-		outlineRepo: outlineRepo,
-		sectionRepo: sectionRepo,
-		tm:          tm,
-		docRepo:     docRepo,
-		storage:     storage,
-		modelCfgSvc: modelCfgSvc,
-		registry:    registry,
+		courseRepo:   courseRepo,
+		outlineRepo:  outlineRepo,
+		sectionRepo:  sectionRepo,
+		questionRepo: questionRepo,
+		tm:           tm,
+		docRepo:      docRepo,
+		storage:      storage,
+		modelCfgSvc:  modelCfgSvc,
+		registry:     registry,
 		generators: map[string]types.SectionContentGenerator{
 			types.SectionTypeSlide: &slideGenerator{},
-			types.SectionTypeQuiz:  &stubGenerator{sectionType: types.SectionTypeQuiz},
+			types.SectionTypeQuiz:  &quizGenerator{questionRepo: questionRepo},
 			types.SectionTypeDemo:  &stubGenerator{sectionType: types.SectionTypeDemo},
 		},
 		hub: newProgressHub(),
@@ -265,7 +268,7 @@ func (s *SectionService) listProgress(ctx context.Context, courseID types.ID) ([
 }
 
 // GetLearnDetail 返回课程学习详情。仅课程 owner 可访问；slide 环节的
-// content / steps 产物以原始 JSON 透传，quiz / demo 环节为占位产物。
+// content / steps 产物以原始 JSON 透传，quiz 环节加载 question 表题目，demo 环节为占位产物。
 func (s *SectionService) GetLearnDetail(ctx context.Context, userID, courseID types.ID) (*types.CourseLearnDetail, error) {
 	course, err := s.courseRepo.GetByID(ctx, userID, courseID)
 	if err != nil {
@@ -282,7 +285,7 @@ func (s *SectionService) GetLearnDetail(ctx context.Context, userID, courseID ty
 	out := make([]types.SectionLearn, 0, len(secs))
 	for i := range secs {
 		sec := &secs[i]
-		out = append(out, types.SectionLearn{
+		sl := types.SectionLearn{
 			ID:              sec.ID,
 			Position:        sec.Position,
 			Type:            sec.Type,
@@ -291,8 +294,16 @@ func (s *SectionService) GetLearnDetail(ctx context.Context, userID, courseID ty
 			Status:          sec.Status,
 			Content:         json.RawMessage(sec.Content),
 			Steps:           json.RawMessage(sec.Steps),
-			Questions:       []any{},
-		})
+			Questions:       []types.LearnQuestion{},
+		}
+		if sec.Type == types.SectionTypeQuiz {
+			qs, qerr := s.loadQuestions(ctx, sec.ID)
+			if qerr != nil {
+				return nil, qerr
+			}
+			sl.Questions = qs
+		}
+		out = append(out, sl)
 	}
 
 	return &types.CourseLearnDetail{
@@ -300,6 +311,28 @@ func (s *SectionService) GetLearnDetail(ctx context.Context, userID, courseID ty
 		Progress: types.ProgressStatusUnstarted,
 		Sections: out,
 	}, nil
+}
+
+// loadQuestions 加载某 quiz 环节题目并转为学习 DTO。
+func (s *SectionService) loadQuestions(ctx context.Context, sectionID types.ID) ([]types.LearnQuestion, error) {
+	qs, err := s.questionRepo.ListBySection(ctx, sectionID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]types.LearnQuestion, 0, len(qs))
+	for i := range qs {
+		q := &qs[i]
+		out = append(out, types.LearnQuestion{
+			ID:           q.ID,
+			Position:     q.Position,
+			Type:         q.Type,
+			Stem:         q.Stem,
+			Options:      unmarshalStringSlice(q.Options),
+			Answers:      unmarshalIntSlice(q.Answers),
+			Explanations: unmarshalStringSlice(q.Explanations),
+		})
+	}
+	return out, nil
 }
 
 // ---- SSE 进度订阅 ----
@@ -508,6 +541,20 @@ func unmarshalKP(raw datatypes.JSON) []string {
 	kp := make([]string, 0)
 	_ = json.Unmarshal(raw, &kp)
 	return kp
+}
+
+// unmarshalStringSlice 将 jsonb 字符串数组列解析为切片；解析失败返回空切片。
+func unmarshalStringSlice(raw datatypes.JSON) []string {
+	out := make([]string, 0)
+	_ = json.Unmarshal(raw, &out)
+	return out
+}
+
+// unmarshalIntSlice 将 jsonb 整数数组列解析为切片；解析失败返回空切片。
+func unmarshalIntSlice(raw datatypes.JSON) []int {
+	out := make([]int, 0)
+	_ = json.Unmarshal(raw, &out)
+	return out
 }
 
 // sectionToProgress 将实体转为进度 DTO（解出知识点列表）。

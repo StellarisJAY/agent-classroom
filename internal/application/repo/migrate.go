@@ -35,11 +35,18 @@ func Migrate(db *gorm.DB) error {
 		types.SectionStatusPending, types.SectionStatusGenerating, types.SectionStatusDone); err != nil {
 		return err
 	}
+	if err := ensureEnum(db, "question_type",
+		types.QuestionTypeSingle, types.QuestionTypeMultiple); err != nil {
+		return err
+	}
 
 	if err := migrateCourseSchema(db); err != nil {
 		return err
 	}
-	return migrateSectionSchema(db)
+	if err := migrateSectionSchema(db); err != nil {
+		return err
+	}
+	return migrateQuestionSchema(db)
 }
 
 // ensureEnum 幂等创建 PostgreSQL ENUM 类型。
@@ -128,7 +135,7 @@ func migrateCourseSchema(db *gorm.DB) error {
 	return nil
 }
 
-// migrateSectionSchema 创建 section 表（question 表留待内容生成逻辑落地时再建）。
+// migrateSectionSchema 创建 section 表。
 func migrateSectionSchema(db *gorm.DB) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS section (
@@ -152,6 +159,33 @@ func migrateSectionSchema(db *gorm.DB) error {
 	for _, stmt := range stmts {
 		if err := db.Exec(stmt).Error; err != nil {
 			return fmt.Errorf("migrate section schema: %w", err)
+		}
+	}
+	return nil
+}
+
+// migrateQuestionSchema 创建 question（测试题）表。对齐 docs/数据库设计.md 3.6。
+func migrateQuestionSchema(db *gorm.DB) error {
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS question (
+			id           uuid PRIMARY KEY,
+			section_id   uuid NOT NULL REFERENCES section(id) ON DELETE CASCADE,
+			position     integer NOT NULL,
+			type         question_type NOT NULL,
+			stem         text NOT NULL,
+			options      jsonb NOT NULL,
+			answers      jsonb NOT NULL,
+			explanations jsonb NOT NULL,
+			create_by    uuid REFERENCES users(id) ON DELETE SET NULL,
+			create_at    timestamptz NOT NULL DEFAULT now(),
+			update_by    uuid REFERENCES users(id) ON DELETE SET NULL,
+			update_at    timestamptz NOT NULL DEFAULT now()
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uniq_question_section_position ON question (section_id, position)`,
+	}
+	for _, stmt := range stmts {
+		if err := db.Exec(stmt).Error; err != nil {
+			return fmt.Errorf("migrate question schema: %w", err)
 		}
 	}
 	return nil
