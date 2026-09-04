@@ -153,7 +153,7 @@ function retry() {
   max-width: 1200px;
 }
 .learn-view__stage-inner[data-type='quiz'],
-.learn-view__stage-inner[data-type='demo'] {
+.learn-view__stage-inner[data-type^='demo_'] {
   max-width: 880px;
 }
 

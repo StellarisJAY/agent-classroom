@@ -13,13 +13,17 @@ const open = ref(false)
 const typeLabel: Record<SectionTypeValue, string> = {
   slide: '讲解',
   quiz: '测验',
-  demo: '演示',
+  demo_3d: '3D 演示',
+  demo_function: '函数演示',
+  demo_basic: '基础演示',
 }
 
 const typeHint: Record<SectionTypeValue, string> = {
   slide: '由老师讲解的图文页',
   quiz: '提交后展示答案与解析',
-  demo: '可交互并编辑的演示',
+  demo_3d: '可交互的 3D 场景演示',
+  demo_function: '可交互的函数/图表演示',
+  demo_basic: '可运行并编辑的基础演示',
 }
 
 const entries = computed(() =>
@@ -172,11 +176,11 @@ const entries = computed(() =>
 .section-drawer__badge[data-type='quiz'] {
   color: #b45309;
 }
-.section-drawer__badge[data-type='demo'] {
+.section-drawer__badge[data-type^='demo_'] {
   color: #0d9488;
 }
 .section-drawer__item.is-active .section-drawer__badge[data-type='quiz'],
-.section-drawer__item.is-active .section-drawer__badge[data-type='demo'] {
+.section-drawer__item.is-active .section-drawer__badge[data-type^='demo_'] {
   color: #fff;
 }
 </style>

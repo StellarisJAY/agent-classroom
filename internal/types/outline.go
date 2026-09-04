@@ -18,10 +18,13 @@ const (
 )
 
 // 环节类型（与 section.type 一致；大纲阶段仅用于约束 LLM 输出）。
+// demo 拆为三种独立类型，各自维护生成流程、提示词与代码模板（详见 docs/数据库设计.md）。
 const (
-	SectionTypeSlide = "slide"
-	SectionTypeQuiz  = "quiz"
-	SectionTypeDemo  = "demo"
+	SectionTypeSlide        = "slide"
+	SectionTypeQuiz         = "quiz"
+	SectionTypeDemo3D       = "demo_3d"
+	SectionTypeDemoFunction = "demo_function"
+	SectionTypeDemoBasic    = "demo_basic"
 )
 
 // ---- 实体 ----
@@ -46,7 +49,7 @@ func (Outline) TableName() string { return "outline" }
 // OutlineSection 单个大纲环节（环节标题 + 形式 + 知识点）。
 type OutlineSection struct {
 	Title           string   `json:"title"`
-	Type            string   `json:"type"` // slide | quiz | demo
+	Type            string   `json:"type"` // slide | quiz | demo_3d | demo_function | demo_basic
 	KnowledgePoints []string `json:"knowledge_points"`
 }
 

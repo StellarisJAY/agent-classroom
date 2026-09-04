@@ -12,7 +12,9 @@ const chat = useConversationStore()
 // 常驻旁白：slide 显示当前步骤讲解；quiz/demo 显示引导文案（quiz 不泄露答案）
 const helperText: Record<string, string> = {
   quiz: '认真作答后再提交，我会在不透露答案的前提下引导你思考。',
-  demo: '可以运行并编辑这段演示代码，动手体验更直观。',
+  demo_3d: '这个 3D 演示可运行、可交互，动手体验更直观。',
+  demo_function: '这个函数演示可运行、可交互，拖动或改动参数更直观。',
+  demo_basic: '可以运行并编辑这段演示代码，动手体验更直观。',
 }
 
 const narration = computed<string>(() => {

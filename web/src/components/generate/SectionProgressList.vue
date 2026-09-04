@@ -10,7 +10,9 @@ defineProps<{ sections: GenerationSection[] }>()
 const sectionTypeMeta: Record<string, { label: string; type: TagProps['type'] }> = {
   [SectionType.Slide]: { label: '讲解', type: 'info' },
   [SectionType.Quiz]: { label: '测试', type: 'warning' },
-  [SectionType.Demo]: { label: '演示', type: 'success' },
+  [SectionType.Demo3D]: { label: '3D 演示', type: 'success' },
+  [SectionType.DemoFunction]: { label: '函数演示', type: 'success' },
+  [SectionType.DemoBasic]: { label: '基础演示', type: 'success' },
 }
 
 function typeMeta(section: GenerationSection) {

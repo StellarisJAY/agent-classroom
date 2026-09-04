@@ -8,10 +8,14 @@ import (
 // 提示词模板均独立维护在 prompts/ 目录下的 markdown 文件中，
 // 支持以 Go text/template 占位符（如 {{.Field}}）留缺口，组装时填充。
 
-// outlineSystemPrompt 大纲生成的 system 提示词（核心任务 / 输出语言 / 课程设计原则 / 输出格式）。
+// outlineSystemPromptSrc 大纲生成的 system 提示词（核心任务 / 输出语言 / 课程设计原则 / 输出格式）源码，
+// 以 {{.SectionCount}} 注入环节数量上限。
 //
 //go:embed prompts/outline.md
-var outlineSystemPrompt string
+var outlineSystemPromptSrc string
+
+// outlineSystemTpl 解析后的 system 提示词模板。template.Must 在启动期校验语法。
+var outlineSystemTpl = template.Must(template.New("outline").Parse(outlineSystemPromptSrc))
 
 // outlineUserPromptTpl 大纲生成的 user 提示词模板源码。
 //
@@ -63,3 +67,24 @@ var quizUserPromptTpl string
 
 // quizUserTpl 解析后的 Quiz user 模板。
 var quizUserTpl = template.Must(template.New("quiz_user").Parse(quizUserPromptTpl))
+
+// ---- Demo Basic 环节生成（单阶段，三段式 style/body/script，后端拼接骨架） ----
+
+// demoBasicSystemPrompt Demo Basic 的 system 提示词。
+//
+//go:embed prompts/demo_basic.md
+var demoBasicSystemPrompt string
+
+// demoBasicUserPromptTpl Demo Basic user 提示词模板源码。
+//
+//go:embed prompts/demo_basic_user.md
+var demoBasicUserPromptTpl string
+
+// demoBasicUserTpl 解析后的 Demo Basic user 模板。
+var demoBasicUserTpl = template.Must(template.New("demo_basic_user").Parse(demoBasicUserPromptTpl))
+
+// demoBasicTemplate demo_basic 的 HTML 骨架（占位符 __STYLE__ / __BODY__ / __SCRIPT__），
+// 生成时用大模型产出的三段逻辑替换后得到完整可运行页面。
+//
+//go:embed templates/demo_basic.html
+var demoBasicTemplate string

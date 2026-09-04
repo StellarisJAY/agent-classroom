@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 
@@ -148,6 +149,7 @@ func (s *CourseService) Create(ctx context.Context, userID types.ID, req *types.
 		Status:        types.CourseStatusDraft,
 		ModelConfigID: req.ModelConfigID,
 		Thinking:      normalizeThinking(req.Thinking),
+		OutlineCount:  normalizeOutlineCount(req.OutlineCount),
 		CreateBy:      &userID,
 	}
 
@@ -221,11 +223,12 @@ func (s *CourseService) GenerateOutline(ctx context.Context, userID, courseID ty
 		return nil, types.ErrNoModelConfig
 	}
 
-	messages, err := buildOutlineMessages(course.Prompt, docsText)
+	messages, err := buildOutlineMessages(course.Prompt, docsText, normalizeOutlineCount(course.OutlineCount))
 	if err != nil {
 		return nil, err
 	}
 	temp := 0.3
+	slog.Debug("generating outline for: ", "course", course.ID, "prompt", course.Prompt)
 	resp, err := client.Chat(ctx, model.ChatRequest{
 		Messages:    messages,
 		Temperature: &temp,
@@ -313,19 +316,29 @@ type outlineUserData struct {
 	DocsSummary string
 }
 
-// buildOutlineMessages 用 outline_user.md 模板渲染用户消息（填充课程要求与文档摘要），
-// 并拼接已外置的 system 提示词。
-func buildOutlineMessages(prompt, docsText string) ([]model.ChatMessage, error) {
-	var buf bytes.Buffer
-	if err := outlineUserTpl.Execute(&buf, outlineUserData{
+// outlineSystemData 系统提示词模板的填充字段。
+type outlineSystemData struct {
+	// SectionCount 大纲环节数量上限
+	SectionCount int
+}
+
+// buildOutlineMessages 用 outline.md 渲染 system 提示词（注入环节数量上限），
+// 用 outline_user.md 模板渲染用户消息（填充课程要求与文档摘要）。
+func buildOutlineMessages(prompt, docsText string, sectionCount int) ([]model.ChatMessage, error) {
+	var sys bytes.Buffer
+	if err := outlineSystemTpl.Execute(&sys, outlineSystemData{SectionCount: sectionCount}); err != nil {
+		return nil, fmt.Errorf("render outline system prompt: %w", err)
+	}
+	var user bytes.Buffer
+	if err := outlineUserTpl.Execute(&user, outlineUserData{
 		Requirement: prompt,
 		DocsSummary: docsText,
 	}); err != nil {
 		return nil, fmt.Errorf("render outline user prompt: %w", err)
 	}
 	return []model.ChatMessage{
-		{Role: model.RoleSystem, Content: outlineSystemPrompt},
-		{Role: model.RoleUser, Content: buf.String()},
+		{Role: model.RoleSystem, Content: sys.String()},
+		{Role: model.RoleUser, Content: user.String()},
 	}, nil
 }
 
@@ -338,7 +351,8 @@ func normalizeSections(in []types.OutlineSection) []types.OutlineSection {
 			continue
 		}
 		switch s.Type {
-		case types.SectionTypeSlide, types.SectionTypeQuiz, types.SectionTypeDemo:
+		case types.SectionTypeSlide, types.SectionTypeQuiz,
+			types.SectionTypeDemo3D, types.SectionTypeDemoFunction, types.SectionTypeDemoBasic:
 		default:
 			continue
 		}
@@ -377,4 +391,15 @@ func normalizeThinking(v string) string {
 	default:
 		return model.ThinkingDefault
 	}
+}
+
+// normalizeOutlineCount 归一化大纲环节数量上限：小于下限（含未设 0）回退默认，超过上限截断。
+func normalizeOutlineCount(n int) int {
+	if n < types.MinOutlineCount {
+		return types.DefaultOutlineCount
+	}
+	if n > types.MaxOutlineCount {
+		return types.MaxOutlineCount
+	}
+	return n
 }

@@ -18,9 +18,18 @@ import type { ProgressStatusValue } from './course'
 export const SectionType = {
   Slide: 'slide',
   Quiz: 'quiz',
-  Demo: 'demo',
+  Demo3D: 'demo_3d',
+  DemoFunction: 'demo_function',
+  DemoBasic: 'demo_basic',
 } as const
 export type SectionTypeValue = (typeof SectionType)[keyof typeof SectionType]
+
+/** 三种 demo 环节类型（聚合判断用） */
+export const DemoSectionTypes = [SectionType.Demo3D, SectionType.DemoFunction, SectionType.DemoBasic] as const
+
+export function isDemoType(type: string): boolean {
+  return (DemoSectionTypes as readonly string[]).includes(type)
+}
 
 export const SectionStatus = {
   Pending: 'pending',
@@ -105,16 +114,10 @@ export interface SlideStep {
 }
 
 // ---- Demo ----
-
-export const DemoSubtype = {
-  D3: '3d',
-  Function: 'function',
-  Basic: 'basic',
-} as const
-export type DemoSubtypeValue = (typeof DemoSubtype)[keyof typeof DemoSubtype]
+// demo 已按三种类型（demo_3d / demo_function / demo_basic）拆分，具体类型见 section.type；
+// content 仅存最终可运行代码（骨架阶段由后端模板拼接产出）。
 
 export interface DemoContent {
-  subtype: DemoSubtypeValue
   code: string
 }
 
@@ -202,7 +205,8 @@ export async function getCourseDetail(courseId: string): Promise<CourseLearnDeta
     method: 'get',
   })
   detail.sections = detail.sections.map((s) => {
-    if (s.type === SectionType.Demo && !isDemoContent(s.content)) {
+    // demo_basic 可运行预览：后端尚未生成真实内容，兜底注入可运行示例。
+    if (s.type === SectionType.DemoBasic && !isDemoContent(s.content)) {
       return { ...s, content: { ...mock.DEMO_CONTENT } }
     }
     return s
@@ -245,9 +249,9 @@ function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
 }
 
-/** 判定某环节 content 是否为有效 demo 内容（含 subtype + code）。 */
+/** 判定某环节 content 是否为有效 demo 内容（含 code）。 */
 function isDemoContent(content: SectionLearn['content']): content is DemoContent {
-  return !!content && typeof content === 'object' && 'code' in content && 'subtype' in content
+  return !!content && typeof content === 'object' && 'code' in content
 }
 
 function splitChunks(text: string, size: number): string[] {

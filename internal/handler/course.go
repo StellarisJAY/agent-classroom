@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -66,6 +67,14 @@ func (h *CourseHandler) Create(c *gin.Context) {
 			return
 		}
 		req.ModelConfigID = &id
+	}
+	if raw := c.PostForm("outline_count"); raw != "" {
+		n, nerr := strconv.Atoi(raw)
+		if nerr != nil {
+			Error(c, types.NewError(types.CodeBadRequest, "outline_count 不合法"))
+			return
+		}
+		req.OutlineCount = n
 	}
 	resp, err := h.svc.Create(c.Request.Context(), userID, req)
 	if err != nil {

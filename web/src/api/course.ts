@@ -25,13 +25,22 @@ export const CourseScope = {
 } as const
 export type CourseScopeValue = (typeof CourseScope)[keyof typeof CourseScope]
 
-/** 环节类型：slide | quiz | demo */
+/** 环节类型：slide | quiz | demo_3d | demo_function | demo_basic */
 export const SectionType = {
   Slide: 'slide',
   Quiz: 'quiz',
-  Demo: 'demo',
+  Demo3D: 'demo_3d',
+  DemoFunction: 'demo_function',
+  DemoBasic: 'demo_basic',
 } as const
 export type SectionTypeValue = (typeof SectionType)[keyof typeof SectionType]
+
+/** 三种 demo 环节类型（聚合判断用） */
+export const DemoSectionTypes = [SectionType.Demo3D, SectionType.DemoFunction, SectionType.DemoBasic] as const
+
+export function isDemoType(type: string): boolean {
+  return (DemoSectionTypes as readonly string[]).includes(type)
+}
 
 /** 大纲状态：draft（待确认）| confirmed */
 export const OutlineStatus = {
@@ -122,10 +131,18 @@ export const Thinking = {
 } as const
 export type ThinkingValue = (typeof Thinking)[keyof typeof Thinking]
 
-/** 创建课程的模型/思考选项 */
+/** 大纲环节数量档位（与后端 types 对齐） */
+export const OutlineCount = {
+  Min: 5,
+  Default: 5,
+  Max: 30,
+} as const
+
+/** 创建课程的模型/思考/大纲环节数选项 */
 export interface CourseGenOptions {
   modelConfigId?: string
   thinking?: ThinkingValue
+  outlineCount?: number
 }
 
 /** 创建草稿课程（multipart：prompt + files[]，参考文档仅 txt/md） */
@@ -139,6 +156,7 @@ export function createCourse(
   files.forEach((f) => form.append('files', f))
   if (opts?.modelConfigId) form.append('model_config_id', opts.modelConfigId)
   if (opts?.thinking) form.append('thinking', opts.thinking)
+  if (typeof opts?.outlineCount === 'number') form.append('outline_count', String(opts.outlineCount))
   return request<CourseCreateResult>({ url: '/courses', method: 'post', data: form })
 }
 

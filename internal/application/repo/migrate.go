@@ -28,8 +28,18 @@ func Migrate(db *gorm.DB) error {
 		return err
 	}
 	if err := ensureEnum(db, "section_type",
-		types.SectionTypeSlide, types.SectionTypeQuiz, types.SectionTypeDemo); err != nil {
+		types.SectionTypeSlide, types.SectionTypeQuiz,
+		types.SectionTypeDemo3D, types.SectionTypeDemoFunction, types.SectionTypeDemoBasic); err != nil {
 		return err
+	}
+	// 兼容已初始化过的旧库：原有 section_type 枚举只含 slide/quiz/demo，
+	// 为不存在的三种 demo 类型逐个幂等补充新值（不涉及数据迁移）。
+	for _, v := range []string{
+		types.SectionTypeDemo3D, types.SectionTypeDemoFunction, types.SectionTypeDemoBasic,
+	} {
+		if err := ensureEnumValue(db, "section_type", v); err != nil {
+			return err
+		}
 	}
 	if err := ensureEnum(db, "section_status",
 		types.SectionStatusPending, types.SectionStatusGenerating, types.SectionStatusDone); err != nil {
@@ -66,6 +76,24 @@ func ensureEnum(db *gorm.DB, name string, values ...string) error {
 	return nil
 }
 
+// ensureEnumValue 幂等为已存在的 ENUM 补充单个值；值已存在则跳过。
+// 用于扩展已初始化库的枚举，不重建类型（不涉及数据变更）。
+func ensureEnumValue(db *gorm.DB, name, value string) error {
+	ddl := fmt.Sprintf(`DO $$ BEGIN
+		IF NOT EXISTS (
+			SELECT 1 FROM pg_enum e
+			JOIN pg_type t ON t.oid = e.enumtypid
+			WHERE t.typname = '%s' AND e.enumlabel = '%s'
+		) THEN
+			ALTER TYPE %s ADD VALUE '%s';
+		END IF;
+	END $$;`, name, value, name, value)
+	if err := db.Exec(ddl).Error; err != nil {
+		return fmt.Errorf("extend enum %s with %s: %w", name, value, err)
+	}
+	return nil
+}
+
 // migrateCourseSchema 创建 course / progress / outline / document 表。
 func migrateCourseSchema(db *gorm.DB) error {
 	stmts := []string{
@@ -78,6 +106,7 @@ func migrateCourseSchema(db *gorm.DB) error {
 			is_public       boolean NOT NULL DEFAULT false,
 			model_config_id uuid REFERENCES user_model_config(id) ON DELETE SET NULL,
 			thinking        text NOT NULL DEFAULT 'default',
+			outline_count   integer NOT NULL DEFAULT 5,
 			create_by       uuid REFERENCES users(id) ON DELETE SET NULL,
 			create_at       timestamptz NOT NULL DEFAULT now(),
 			update_at       timestamptz NOT NULL DEFAULT now()
@@ -122,6 +151,9 @@ func migrateCourseSchema(db *gorm.DB) error {
 	// 兼容已存在的旧库：补 prompt 列、移除废弃的 description 列。
 	if err := db.Exec(`ALTER TABLE course ADD COLUMN IF NOT EXISTS prompt text NOT NULL DEFAULT ''`).Error; err != nil {
 		return fmt.Errorf("migrate course add prompt: %w", err)
+	}
+	if err := db.Exec(`ALTER TABLE course ADD COLUMN IF NOT EXISTS outline_count integer NOT NULL DEFAULT 5`).Error; err != nil {
+		return fmt.Errorf("migrate course add outline_count: %w", err)
 	}
 	if err := db.Exec(`ALTER TABLE course DROP COLUMN IF EXISTS description`).Error; err != nil {
 		return fmt.Errorf("migrate course drop description: %w", err)

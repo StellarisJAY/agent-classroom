@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NIcon, NInput, NSelect, NTooltip, NUpload, useMessage } from 'naive-ui'
+import { NButton, NIcon, NInput, NInputNumber, NSelect, NSlider, NTooltip, NUpload, useMessage } from 'naive-ui'
 import type { SelectOption, UploadFileInfo } from 'naive-ui'
 import { RocketOutline, AttachOutline } from '@vicons/ionicons5'
 
-import { Thinking, type ThinkingValue, createCourse } from '@/api/course'
+import { OutlineCount, Thinking, type ThinkingValue, createCourse } from '@/api/course'
 import { useModelConfigStore } from '@/stores/model-config'
 
 const router = useRouter()
@@ -15,6 +15,9 @@ const modelConfigStore = useModelConfigStore()
 const prompt = ref('')
 const files = ref<UploadFileInfo[]>([])
 const submitting = ref(false)
+
+/** 大纲环节数量上限 */
+const outlineCount = ref(OutlineCount.Default)
 
 /** 选中的模型配置；空串表示使用默认模型（不随课程绑定专属配置） */
 const modelConfigId = ref('')
@@ -81,6 +84,7 @@ async function handleSubmit() {
     const course = await createCourse(prompt.value.trim(), rawFiles, {
       modelConfigId: modelConfigId.value || undefined,
       thinking: thinking.value,
+      outlineCount: outlineCount.value,
     })
     message.success('课程已创建，正在生成大纲…')
     router.push(`/preview/${course.id}`)
@@ -127,6 +131,33 @@ onMounted(() => {
         >
           {{ f.name }}
         </n-tag>
+      </div>
+
+      <div class="create-view__outline">
+        <div class="create-view__outline-head">
+          <span class="create-view__outline-label">课程环节数量</span>
+          <n-input-number
+            v-model:value="outlineCount"
+            :min="OutlineCount.Min"
+            :max="OutlineCount.Max"
+            :disabled="submitting"
+            size="small"
+            class="create-view__outline-num"
+          />
+        </div>
+        <n-slider
+          v-model:value="outlineCount"
+          :min="OutlineCount.Min"
+          :max="OutlineCount.Max"
+          :step="1"
+          :disabled="submitting"
+        />
+        <p v-if="outlineCount > 15" class="create-view__outline-warn">
+          环节较多（&gt;15）：生成时间会更长，且消耗的 Token 也会更多。
+        </p>
+        <p v-else class="create-view__outline-hint">
+          最多约 {{ outlineCount }} 个环节，AI 按需拆解，不强制凑满。
+        </p>
       </div>
 
       <div class="create-view__toolbar">
@@ -251,6 +282,39 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: 6px;
   margin: 4px 2px 10px;
+}
+
+.create-view__outline {
+  padding: 4px 8px 8px;
+}
+
+.create-view__outline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.create-view__outline-label {
+  font-size: 13px;
+  color: var(--app-text-2, #64748b);
+}
+
+.create-view__outline-num {
+  width: 84px;
+}
+
+.create-view__outline-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--app-text-2, #64748b);
+}
+
+.create-view__outline-warn {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #b45309;
 }
 
 .create-view__toolbar {

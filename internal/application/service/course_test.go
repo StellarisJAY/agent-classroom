@@ -327,6 +327,46 @@ func TestCreateStoresCourseAndDocuments(t *testing.T) {
 	require.ElementsMatch(t, []string{created.ID.String() + "/intro.md", created.ID.String() + "/quiz.txt"}, putKeys)
 	require.NotNil(t, docCreated)
 	require.Equal(t, created.ID, docCreated.CourseID)
+	// 未传大纲环节数时回退默认
+	require.Equal(t, types.DefaultOutlineCount, created.OutlineCount)
+}
+
+func TestCreateStoresOutlineCount(t *testing.T) {
+	uid := types.NewID()
+	var created *types.Course
+	svc := NewCourseService(
+		&mockCourseRepo{create: func(c *types.Course) error { created = c; return nil }},
+		&mockOutlineRepo{},
+		&mockDocRepo{},
+		passTM{},
+		&mockStorage{},
+		defaultMockSet().cfgSvc,
+		model.NewRegistry(),
+	)
+	_, err := svc.Create(context.Background(), uid, &types.CreateCourseReq{
+		Prompt:       "学习数组",
+		OutlineCount: 12,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 12, created.OutlineCount)
+}
+
+func TestNormalizeOutlineCount(t *testing.T) {
+	require.Equal(t, types.DefaultOutlineCount, normalizeOutlineCount(0))
+	require.Equal(t, types.DefaultOutlineCount, normalizeOutlineCount(4))
+	require.Equal(t, 12, normalizeOutlineCount(12))
+	require.Equal(t, types.MaxOutlineCount, normalizeOutlineCount(50))
+}
+
+func TestBuildOutlineMessagesIncludesCount(t *testing.T) {
+	msgs, err := buildOutlineMessages("学习数组", "", 12)
+	require.NoError(t, err)
+	require.Len(t, msgs, 2)
+	require.Equal(t, model.RoleSystem, msgs[0].Role)
+	require.Contains(t, msgs[0].Content, "环节数量不超过 12 个")
+	require.Contains(t, msgs[0].Content, "不超过 12 项")
+	require.Equal(t, model.RoleUser, msgs[1].Role)
+	require.Contains(t, msgs[1].Content, "学习数组")
 }
 
 // fakeLLM 固定返回预设内容的 LLM 客户端。

@@ -3,36 +3,47 @@ import { computed } from 'vue'
 import { NAlert, NButton, NIcon } from 'naive-ui'
 import { CodeSlashOutline, PlayOutline, PencilOutline } from '@vicons/ionicons5'
 
-import type { DemoContent } from '@/api/learn'
-import { DemoSubtype } from '@/api/learn'
+import { SectionType, type SectionTypeValue } from '@/api/learn'
 import { useLearnStore } from '@/stores/learn'
 
 const store = useLearnStore()
 
-const demo = computed<DemoContent | null>(() => store.demoSectionContent)
-const isBasic = computed(() => demo.value?.subtype === DemoSubtype.Basic)
+const demo = computed(() => store.demoSectionContent)
+const demoType = computed<SectionTypeValue | null>(() => store.demoType)
+const isBasic = computed(() => demoType.value === SectionType.DemoBasic)
 const runCode = computed(() => (store.demoEditing ? store.demoDraft : (demo.value?.code ?? '')))
+
+/** 三种 demo 类型的展示信息（demo_3d/demo_function 需预注入库，本期未实现在线运行/编辑）。 */
+const demoTypeLabel: Record<string, string> = {
+  [SectionType.Demo3D]: '3D 演示',
+  [SectionType.DemoFunction]: '函数演示',
+  [SectionType.DemoBasic]: '基础演示',
+}
+
+const typeName = computed(() =>
+  demoType.value ? (demoTypeLabel[demoType.value] ?? demoType.value) : '',
+)
 </script>
 
 <template>
   <div class="stage-demo">
-    <div v-if="!demo" class="stage-demo__empty">本环节暂无演示内容。</div>
+    <div v-if="!demoType" class="stage-demo__empty">本环节暂无演示内容。</div>
 
     <template v-else>
       <div class="stage-demo__head">
-        <span class="stage-demo__subtype">{{ demo.subtype }}</span>
+        <span class="stage-demo__type">{{ typeName }}</span>
         <span class="stage-demo__hint">
           {{
             isBasic
               ? '可交互演示：改动代码后运行预览'
-              : '该类型（' + demo.subtype + '）需预注入库，本期暂不支持在线编辑'
+              : typeName + ' 需在沙箱内预注入运行库，本期暂不支持在线编辑'
           }}
         </span>
         <div v-if="store.demoEditing" class="stage-demo__actions">
           <n-button size="small" @click="store.cancelEditing()">取消</n-button>
           <n-button size="small" type="primary" @click="store.saveDemo()">保存</n-button>
         </div>
-        <div v-else-if="isBasic" class="stage-demo__actions">
+        <div v-else-if="isBasic && demo" class="stage-demo__actions">
           <n-button size="small" quaternary aria-label="编辑代码" @click="store.startEditing()">
             <template #icon>
               <n-icon><PencilOutline /></n-icon>
@@ -49,12 +60,12 @@ const runCode = computed(() => (store.demoEditing ? store.demoDraft : (demo.valu
         class="stage-demo__alert"
         title="演示类型暂未支持"
       >
-        {{ demo.subtype }} 演示需要在沙箱内预注入
-        {{ demo.subtype === '3d' ? 'Three.js' : '绘图' }} 运行库，本期尚未实现。
+        {{ typeName }} 需要在沙箱内预注入运行库
+        {{ demoType === SectionType.Demo3D ? 'Three.js' : '绘图' }} 本期尚未实现。
       </n-alert>
 
-      <div class="stage-demo__split" :class="{ 'is-editing': store.demoEditing }">
-        <div v-if="isBasic" class="stage-demo__preview">
+      <div v-if="isBasic && demo" class="stage-demo__split" :class="{ 'is-editing': store.demoEditing }">
+        <div class="stage-demo__preview">
           <div class="stage-demo__preview-head">
             <n-icon><PlayOutline /></n-icon>
             <span>运行结果</span>
@@ -106,7 +117,7 @@ const runCode = computed(() => (store.demoEditing ? store.demoDraft : (demo.valu
   align-items: center;
   gap: 10px;
 }
-.stage-demo__subtype {
+.stage-demo__type {
   padding: 0 8px;
   font-size: 12px;
   border-radius: 999px;

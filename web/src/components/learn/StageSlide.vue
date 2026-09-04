@@ -36,10 +36,13 @@ function fit() {
 onMounted(() => {
   fit()
   if (regionRef.value) {
-    ro = new ResizeObserver(fit)
+    ro = new ResizeObserver(() => {
+      fit()
+      nextTick(measureOverlays)
+    })
     ro.observe(regionRef.value)
   }
-  void measureOverlays()
+  nextTick(measureOverlays)
 })
 
 onBeforeUnmount(() => ro?.disconnect())
@@ -130,6 +133,9 @@ interface OverlayRect {
   height: number
 }
 
+/** underline 下划线厚度（px，画布坐标系） */
+const UNDERLINE_THICKNESS = 2
+
 const elementRefs = new Map<string, HTMLElement>()
 const overlays = ref<OverlayRect[]>([])
 
@@ -149,14 +155,27 @@ function measureOverlays() {
     const el = elementRefs.get(action.targetElementId)
     if (!el) continue
     const r = el.getBoundingClientRect()
-    list.push({
-      key: `${action.type}-${action.targetElementId}`,
-      type: action.type,
-      left: r.left - base.left,
-      top: r.top - base.top,
-      width: r.width,
-      height: r.height,
-    })
+    if (action.type === 'underline') {
+      // underline：只在目标元素底边画一条细横线，不覆盖元素本身
+      const thickness = UNDERLINE_THICKNESS
+      list.push({
+        key: `${action.type}-${action.targetElementId}`,
+        type: action.type,
+        left: r.left - base.left,
+        top: r.bottom - base.top - thickness,
+        width: r.width,
+        height: thickness,
+      })
+    } else {
+      list.push({
+        key: `${action.type}-${action.targetElementId}`,
+        type: action.type,
+        left: r.left - base.left,
+        top: r.top - base.top,
+        width: r.width,
+        height: r.height,
+      })
+    }
   }
   overlays.value = list
 }
@@ -164,6 +183,7 @@ function measureOverlays() {
 watch([() => store.stepIndex, () => store.currentIndex], async () => {
   await nextTick()
   fit()
+  await nextTick()
   measureOverlays()
 })
 </script>
@@ -231,7 +251,12 @@ watch([() => store.stepIndex, () => store.currentIndex], async () => {
             width: `${o.width}px`,
             height: `${o.height}px`,
             borderColor: content.accent,
-            background: o.type === 'highlight' ? `${content.accent}33` : undefined,
+            background:
+              o.type === 'highlight'
+                ? `${content.accent}33`
+                : o.type === 'underline'
+                  ? content.accent
+                  : undefined,
           }"
         />
       </div>
@@ -332,6 +357,6 @@ watch([() => store.stepIndex, () => store.currentIndex], async () => {
 }
 .stage-overlay.is-underline {
   border: none;
-  background: currentColor;
+  border-radius: 1px;
 }
 </style>

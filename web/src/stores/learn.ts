@@ -45,7 +45,7 @@ export const useLearnStore = defineStore('learn', () => {
 
   const isSlide = computed(() => currentSection.value?.type === 'slide')
   const isQuiz = computed(() => currentSection.value?.type === 'quiz')
-  const isDemo = computed(() => currentSection.value?.type === 'demo')
+  const isDemo = computed(() => learnApi.isDemoType(currentSection.value?.type ?? ''))
 
   const slideContent = computed<SlideContent | null>(() =>
     isSlide.value ? (currentSection.value!.content as SlideContent) : null,
@@ -62,6 +62,9 @@ export const useLearnStore = defineStore('learn', () => {
   const questionCount = computed(() => currentSection.value?.questions.length ?? 0)
   const demoSectionContent = computed(() =>
     isDemo.value ? (currentSection.value!.content as learnApi.DemoContent) : null,
+  )
+  const demoType = computed(() =>
+    isDemo.value ? (currentSection.value!.type as learnApi.SectionTypeValue) : null,
   )
 
   const hasPrevSection = computed(() => currentIndex.value > 0)
@@ -237,7 +240,7 @@ export const useLearnStore = defineStore('learn', () => {
     const section = currentSection.value
     if (!section || !demoEditing.value) return
     await learnApi.saveDemoCode(section.id, demoDraft.value)
-    if (section.content && section.type === 'demo') {
+    if (section.content && learnApi.isDemoType(section.type)) {
       ;(section.content as learnApi.DemoContent).code = demoDraft.value
     }
     demoEditing.value = false
@@ -271,6 +274,7 @@ export const useLearnStore = defineStore('learn', () => {
     currentStep,
     questionCount,
     demoSectionContent,
+    demoType,
     demoEditing,
     demoDraft,
     autoPlaying,

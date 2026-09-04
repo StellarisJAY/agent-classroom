@@ -36,9 +36,9 @@ function seedMessages(courseId: string): ChatMessage[] {
 }
 
 // ---- demo 兜底数据（后端尚未生成真实内容）----
+// 仅 demo_basic 目前可运行预览；demo_3d / demo_function 需预注入库，本期未实现。
 
 export const DEMO_CONTENT: DemoContent = {
-  subtype: 'basic',
   code: `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>

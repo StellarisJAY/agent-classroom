@@ -32,6 +32,16 @@ const (
 	CourseScopePublic = "public"
 )
 
+// 大纲环节数量档位
+const (
+	// DefaultOutlineCount 默认 / 最小环节数
+	DefaultOutlineCount = 5
+	// MinOutlineCount 允许的最小环节数
+	MinOutlineCount = 5
+	// MaxOutlineCount 允许的最大环节数
+	MaxOutlineCount = 30
+)
+
 // ---- 实体 ----
 
 // Course 课程实体，对应 course 表。
@@ -47,10 +57,12 @@ type Course struct {
 	// ModelConfigID 该课程使用哪份模型配置；为空则大纲生成时回退默认配置。
 	ModelConfigID *ID `gorm:"type:uuid" json:"model_config_id"`
 	// Thinking 生成所用模型的思考限制：off / default / max。
-	Thinking string    `gorm:"not null;default:default" json:"thinking"`
-	CreateBy *ID       `gorm:"type:uuid" json:"-"`
-	CreateAt time.Time `gorm:"not null;default:now()" json:"-"`
-	UpdateAt time.Time `gorm:"not null;default:now()" json:"-"`
+	Thinking string `gorm:"not null;default:default" json:"thinking"`
+	// OutlineCount 大纲环节数量上限（用户可调）；为空回退默认。
+	OutlineCount int       `gorm:"not null;default:5" json:"outline_count"`
+	CreateBy     *ID       `gorm:"type:uuid" json:"-"`
+	CreateAt     time.Time `gorm:"not null;default:now()" json:"-"`
+	UpdateAt     time.Time `gorm:"not null;default:now()" json:"-"`
 }
 
 // TableName 指定表名
@@ -134,6 +146,8 @@ type CreateCourseReq struct {
 	ModelConfigID *ID
 	// Thinking 模型思考限制：off / default / max。
 	Thinking string
+	// OutlineCount 大纲环节数量上限；0 或缺省由 service 回退默认（5）。
+	OutlineCount int
 }
 
 // UploadedFile 一个已读入内存的上传文档。Name 为原始文件名（含扩展名），Data 为文件内容。

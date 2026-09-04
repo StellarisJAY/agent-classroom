@@ -14,10 +14,11 @@ import (
 	"github.com/StellarisJAY/agent-classroom/internal/types"
 )
 
-// ---- 内容生成器占位实现（demo 尚未落地，仅置占位产物并标记完成） ----
+// ---- 内容生成器占位实现（demo 三种类型均未落地，仅置占位产物并标记完成） ----
 
-// stubGenerator demo 环节的内容生成器占位：不调用 LLM，仅写入占位产物，
-// 用于打通「确认 → 串行生成 → 完成」全链路。真实生成逻辑后续替换对应分派。
+// stubGenerator demo 环节（demo_3d / demo_function / demo_basic）的内容生成器占位：
+// 不调用 LLM，仅写入占位产物，用于打通「确认 → 串行生成 → 完成」全链路。
+// 骨架完成后按类型分别替换为真实生成器实现。
 type stubGenerator struct {
 	sectionType string
 }
@@ -25,7 +26,7 @@ type stubGenerator struct {
 func (g *stubGenerator) Generate(_ context.Context, section *types.Section, _ *types.GenerationContext) error {
 	slog.Info("section generator stub (not implemented)",
 		"type", g.sectionType, "section_id", section.ID.String(), "title", section.Title)
-	content, err := json.Marshal(map[string]any{"stub": true, "generated": false})
+	content, err := json.Marshal(map[string]any{"type": g.sectionType, "stub": true, "generated": false})
 	if err != nil {
 		return err
 	}
@@ -161,7 +162,12 @@ func NewSectionService(
 		generators: map[string]types.SectionContentGenerator{
 			types.SectionTypeSlide: &slideGenerator{},
 			types.SectionTypeQuiz:  &quizGenerator{questionRepo: questionRepo},
-			types.SectionTypeDemo:  &stubGenerator{sectionType: types.SectionTypeDemo},
+			// demo 三种类型拆分为独立环节类型，各自维护生成流程、提示词与代码模板。
+			// demo_basic 已实现真实生成（后端拼接模板 + LLM 只出逻辑）；
+			// demo_3d / demo_function 仍为占位，后续按同样模式补全。
+			types.SectionTypeDemo3D:       &stubGenerator{sectionType: types.SectionTypeDemo3D},
+			types.SectionTypeDemoFunction: &stubGenerator{sectionType: types.SectionTypeDemoFunction},
+			types.SectionTypeDemoBasic:    &demoBasicGenerator{},
 		},
 		hub: newProgressHub(),
 	}
