@@ -18,6 +18,7 @@ import (
 	"github.com/StellarisJAY/agent-classroom/internal/config"
 	"github.com/StellarisJAY/agent-classroom/internal/handler"
 	"github.com/StellarisJAY/agent-classroom/internal/model"
+	"github.com/StellarisJAY/agent-classroom/internal/model/image"
 	"github.com/StellarisJAY/agent-classroom/internal/model/llm"
 	"github.com/StellarisJAY/agent-classroom/internal/router"
 	"github.com/StellarisJAY/agent-classroom/internal/storage"
@@ -64,9 +65,10 @@ func NewApp(cfg *config.Config) (*App, error) {
 	modelConfigSvc := service.NewModelConfigService(modelConfigRepo, store, cipher, cfg)
 	modelConfigHandler := handler.NewModelConfigHandler(modelConfigSvc)
 
-	// 模型适配层注册表：默认回退 OpenAI 兼容实现，覆盖 openai/deepseek/qwen 等。
+	// 模型适配层注册表：默认回退 OpenAI 兼容实现，覆盖 openai/deepseek/bailian 等。
 	modelRegistry := model.NewRegistry()
 	modelRegistry.SetDefaultLLMFactory(llm.NewOpenAICompatible)
+	modelRegistry.SetDefaultImageFactory(image.NewOpenAICompatible)
 
 	objStorage, err := storage.NewLocal(cfg.Storage.LocalDir)
 	if err != nil {

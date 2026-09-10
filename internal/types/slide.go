@@ -11,6 +11,7 @@ const (
 	SlideElementFormula = "formula"
 	SlideElementShape   = "shape"
 	SlideElementList    = "list"
+	SlideElementImage   = "image"
 )
 
 // Slide 动作类型。
@@ -64,6 +65,10 @@ type SlideElement struct {
 	// list 专用
 	Ordered bool     `json:"ordered,omitempty"`
 	Items   []string `json:"items,omitempty"`
+
+	// image 专用：Prompt 为文生图提示词（生成前），Src 为生成后的图片 URL（生成后回填）。
+	Prompt string `json:"prompt,omitempty"`
+	Src    string `json:"src,omitempty"`
 }
 
 // SlideTextStyle text 元素的行内样式。

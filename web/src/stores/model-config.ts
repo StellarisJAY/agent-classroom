@@ -18,6 +18,13 @@ export const useModelConfigStore = defineStore('model-config', () => {
   const defaultConfig = computed(() => configs.value.find((c) => c.is_default) ?? null)
   const hasConfig = computed(() => configs.value.length > 0)
 
+  /** 当前默认 LLM 配置（课程生成用）；无默认时为 null */
+  const defaultLLMConfig = computed(
+    () => configs.value.find((c) => c.kind === 'llm' && c.is_default) ?? null,
+  )
+  /** 是否存在 LLM 用途配置 */
+  const hasLLMConfig = computed(() => configs.value.some((c) => c.kind === 'llm'))
+
   /** 拉取配置列表并覆盖本地 */
   async function fetchList() {
     loading.value = true
@@ -54,10 +61,14 @@ export const useModelConfigStore = defineStore('model-config', () => {
     configs.value = configs.value.filter((c) => c.id !== id)
   }
 
-  /** 设为默认：成功后本地互斥更新 is_default，避免整表重拉 */
+  /** 设为默认：成功后按用途本地互斥更新 is_default，避免整表重拉 */
   async function setDefault(id: string) {
+    const target = configs.value.find((c) => c.id === id)
+    if (!target) return
     await modelConfigApi.setDefaultModelConfig(id)
-    configs.value = configs.value.map((c) => ({ ...c, is_default: c.id === id }))
+    configs.value = configs.value.map((c) =>
+      c.kind === target.kind ? { ...c, is_default: c.id === id } : c,
+    )
   }
 
   return {
@@ -66,6 +77,8 @@ export const useModelConfigStore = defineStore('model-config', () => {
     initialized,
     defaultConfig,
     hasConfig,
+    defaultLLMConfig,
+    hasLLMConfig,
     fetchList,
     ensureLoaded,
     create,

@@ -172,6 +172,25 @@ func migrateCourseSchema(db *gorm.DB) error {
 	if err := db.Exec(`ALTER TABLE course ADD COLUMN IF NOT EXISTS model_config_id uuid REFERENCES user_model_config(id) ON DELETE SET NULL`).Error; err != nil {
 		return fmt.Errorf("migrate course add model_config_id: %w", err)
 	}
+	if err := db.Exec(`ALTER TABLE course ADD COLUMN IF NOT EXISTS generate_images boolean NOT NULL DEFAULT false`).Error; err != nil {
+		return fmt.Errorf("migrate course add generate_images: %w", err)
+	}
+	if err := db.Exec(`ALTER TABLE course ADD COLUMN IF NOT EXISTS image_model_config_id uuid REFERENCES user_model_config(id) ON DELETE SET NULL`).Error; err != nil {
+		return fmt.Errorf("migrate course add image_model_config_id: %w", err)
+	}
+	// 默认模型不变量：同一 (user, kind) 至多一个默认。先清理历史重复默认，再建部分唯一索引。
+	if err := db.Exec(`UPDATE user_model_config u SET is_default = false
+		WHERE is_default AND EXISTS (
+			SELECT 1 FROM user_model_config o
+			WHERE o.user_id = u.user_id AND o.kind = u.kind AND o.is_default
+			  AND o.id <> u.id AND o.create_at > u.create_at
+		)`).Error; err != nil {
+		return fmt.Errorf("migrate dedup user_model_config default: %w", err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_user_model_config_default
+		ON user_model_config (user_id, kind) WHERE is_default`).Error; err != nil {
+		return fmt.Errorf("migrate user_model_config default index: %w", err)
+	}
 	if err := db.Exec(`ALTER TABLE course ADD COLUMN IF NOT EXISTS thinking text NOT NULL DEFAULT 'default'`).Error; err != nil {
 		return fmt.Errorf("migrate course add thinking: %w", err)
 	}

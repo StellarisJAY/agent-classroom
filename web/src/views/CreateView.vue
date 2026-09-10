@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NIcon, NInput, NInputNumber, NSelect, NSlider, NTooltip, NUpload, useMessage } from 'naive-ui'
+import { NButton, NIcon, NInput, NInputNumber, NSelect, NSlider, NSwitch, NTooltip, NUpload, useMessage } from 'naive-ui'
 import type { SelectOption, UploadFileInfo } from 'naive-ui'
 import { RocketOutline, AttachOutline } from '@vicons/ionicons5'
 
@@ -23,14 +23,20 @@ const outlineCount = ref(OutlineCount.Default)
 const modelConfigId = ref('')
 const thinking = ref<ThinkingValue>(Thinking.Default)
 
+/** 是否生成幻灯片配图；初始关闭 */
+const generateImages = ref(false)
+/** 选中的配图模型配置；空串表示跟随用户默认 image 配置 */
+const imageModelConfigId = ref('')
+
 const ALLOWED_EXTS = ['.txt', '.md', '.markdown']
 
 const modelOptions = computed<SelectOption[]>(() => {
-  const label = modelConfigStore.defaultConfig
-    ? `默认 · ${modelConfigStore.defaultConfig.model}`
+  const label = modelConfigStore.defaultLLMConfig
+    ? `默认 · ${modelConfigStore.defaultLLMConfig.model}`
     : '服务端默认模型'
   const opts: SelectOption[] = [{ label, value: '' }]
   for (const c of modelConfigStore.configs) {
+    if (c.kind !== 'llm') continue
     opts.push({ label: `${c.model}（${c.provider}）`, value: c.id })
   }
   return opts
@@ -41,6 +47,23 @@ const thinkingOptions: SelectOption[] = [
   { label: '默认', value: Thinking.Default },
   { label: '最大化思考', value: Thinking.Max },
 ]
+
+/** 配图模型下拉：默认（跟随用户默认 image 配置）+ 具体 image 配置 */
+const imageOptions = computed<SelectOption[]>(() => {
+  const label = modelConfigStore.defaultConfig?.kind === 'image'
+    ? `默认 · ${modelConfigStore.defaultConfig.model}`
+    : '默认模型'
+  const opts: SelectOption[] = [{ label, value: '' }]
+  for (const c of modelConfigStore.configs) {
+    if (c.kind !== 'image') continue
+    opts.push({ label: `${c.model}（${c.provider}）`, value: c.id })
+  }
+  return opts
+})
+
+function handleImageModelChange(value: string | number | null) {
+  imageModelConfigId.value = value ? String(value) : ''
+}
 
 function isAllowed(name: string): boolean {
   const lower = name.toLowerCase()
@@ -85,6 +108,9 @@ async function handleSubmit() {
       modelConfigId: modelConfigId.value || undefined,
       thinking: thinking.value,
       outlineCount: outlineCount.value,
+      generateImages: generateImages.value,
+      imageModelConfigId:
+        generateImages.value && imageModelConfigId.value ? imageModelConfigId.value : undefined,
     })
     message.success('课程已创建，正在生成大纲…')
     router.push(`/preview/${course.id}`)
@@ -160,6 +186,27 @@ onMounted(() => {
         </p>
       </div>
 
+      <div class="create-view__images">
+        <div class="create-view__images-head">
+          <span class="create-view__images-label">幻灯片配图</span>
+          <n-switch v-model:value="generateImages" :disabled="submitting" size="small" />
+        </div>
+        <div class="create-view__images-body">
+          <n-select
+            v-model:value="imageModelConfigId"
+            :options="imageOptions"
+            size="small"
+            class="create-view__images-select"
+            :disabled="submitting || !generateImages"
+            placeholder="配图模型"
+            @update:value="handleImageModelChange"
+          />
+          <p class="create-view__images-hint">
+            {{ generateImages ? '每个 slide 将由配图模型生成插图' : '关闭后不生成配图，仅纯文本内容' }}
+          </p>
+        </div>
+      </div>
+
       <div class="create-view__toolbar">
         <div class="create-view__tools">
           <n-select
@@ -216,8 +263,8 @@ onMounted(() => {
         </n-button>
       </div>
 
-      <p v-if="!modelConfigStore.hasConfig" class="create-view__hint">
-        尚未添加模型配置，将使用服务端默认模型
+      <p v-if="!modelConfigStore.hasLLMConfig" class="create-view__hint">
+        尚未添加 LLM 模型配置，将使用服务端默认模型
       </p>
     </div>
   </div>
@@ -315,6 +362,39 @@ onMounted(() => {
   margin: 4px 0 0;
   font-size: 12px;
   color: #b45309;
+}
+
+.create-view__images {
+  padding: 4px 8px 8px;
+}
+
+.create-view__images-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.create-view__images-label {
+  font-size: 13px;
+  color: var(--app-text-2, #64748b);
+}
+
+.create-view__images-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.create-view__images-select {
+  width: 260px;
+}
+
+.create-view__images-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--app-text-2, #64748b);
 }
 
 .create-view__toolbar {

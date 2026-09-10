@@ -93,10 +93,10 @@ func (m *mockOutlineRepo) DeleteByCourse(_ context.Context, courseID types.ID) e
 }
 
 type mockHistoryRepo struct {
-	create    func(*types.OutlineHistory) error
-	listBy    func(types.ID) ([]types.OutlineHistory, error)
-	getByVer  func(types.ID, int) (*types.OutlineHistory, error)
-	prune     func(types.ID, int) error
+	create   func(*types.OutlineHistory) error
+	listBy   func(types.ID) ([]types.OutlineHistory, error)
+	getByVer func(types.ID, int) (*types.OutlineHistory, error)
+	prune    func(types.ID, int) error
 }
 
 var _ types.OutlineHistoryRepo = (*mockHistoryRepo)(nil)
@@ -179,6 +179,9 @@ var _ types.ModelConfigService = (*mockModelCfgSvc)(nil)
 
 func (m *mockModelCfgSvc) ResolveDefault(context.Context, types.ID) (model.ProviderConfig, error) {
 	return m.resolve()
+}
+func (m *mockModelCfgSvc) ResolveDefaultByKind(context.Context, types.ID, string) (model.ProviderConfig, error) {
+	return model.ProviderConfig{}, types.ErrNotFound
 }
 func (m *mockModelCfgSvc) ResolveByID(context.Context, types.ID, types.ID) (model.ProviderConfig, error) {
 	return model.ProviderConfig{}, types.ErrNotFound

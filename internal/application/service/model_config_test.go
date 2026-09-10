@@ -38,13 +38,13 @@ func (m *mockModelConfigRepo) GetByID(_ context.Context, u, id types.ID) (*types
 func (m *mockModelConfigRepo) ListByUser(_ context.Context, u types.ID) ([]types.UserModelConfig, error) {
 	return m.listByUser(u)
 }
-func (m *mockModelConfigRepo) GetDefault(_ context.Context, u types.ID) (*types.UserModelConfig, error) {
+func (m *mockModelConfigRepo) GetDefaultByKind(_ context.Context, u types.ID, _ string) (*types.UserModelConfig, error) {
 	return m.getDefault(u)
 }
 func (m *mockModelConfigRepo) Delete(_ context.Context, u, id types.ID) error {
 	return m.delete(u, id)
 }
-func (m *mockModelConfigRepo) ClearDefault(_ context.Context, u types.ID) error {
+func (m *mockModelConfigRepo) ClearDefault(_ context.Context, u types.ID, _ string) error {
 	return m.clearDefault(u)
 }
 
@@ -167,6 +167,25 @@ func TestModelConfigUpdateKeepsKeyWhenEmpty(t *testing.T) {
 		Model: "new-model", APIKey: "",
 	})
 	require.NoError(t, err)
+}
+
+func TestModelConfigUpdateDefaultKindChangeClearsOldKind(t *testing.T) {
+	uid, id := types.NewID(), types.NewID()
+	cleared := false
+	svc := newModelConfigSvc(&mockModelConfigRepo{
+		byID: func(u, i types.ID) (*types.UserModelConfig, error) {
+			return &types.UserModelConfig{ID: id, UserID: uid, Kind: "llm",
+				IsDefault: true, Provider: "openai", Model: "m", BaseURL: "https://x"}, nil
+		},
+		clearDefault: func(types.ID) error {
+			cleared = true
+			return nil
+		},
+		update: func(c *types.UserModelConfig) error { return nil },
+	})
+	_, err := svc.Update(context.Background(), uid, id, &types.UpdateModelConfigReq{Kind: "image"})
+	require.NoError(t, err)
+	require.True(t, cleared, "已是默认的配置变更 kind 时应清除旧 kind 默认")
 }
 
 func TestModelConfigDeleteUnknown(t *testing.T) {

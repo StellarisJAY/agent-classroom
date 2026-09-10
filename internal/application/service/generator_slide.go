@@ -60,6 +60,8 @@ func (g *slideGenerator) Generate(ctx context.Context, section *types.Section, g
 	if err != nil {
 		return err
 	}
+	// 图片生成环节：为 image 元素生成图片并回填 src（失败元素剔除）。
+	g.generateImages(ctx, section, genCtx, content)
 	// 阶段二：参考元素生成讲解步骤。
 	steps, err := g.generateSteps(ctx, section, genCtx, prev, content)
 	if err != nil {
@@ -161,6 +163,98 @@ func (g *slideGenerator) generateSteps(ctx context.Context, section *types.Secti
 	return steps, nil
 }
 
+// ---- 图片生成 ----
+
+// generateImages 图片生成环节：为 content 中 src 为空的 image 元素调用文生图模型，
+// 写入对象存储并回填 src；单图重试后仍失败则删除该元素，不阻断流程。
+// 未配置图片模型或存储时移除全部 image 元素（此时提示词亦要求不使用图片）。
+func (g *slideGenerator) generateImages(ctx context.Context, section *types.Section, genCtx *types.GenerationContext, content *types.SlideContent) {
+	if genCtx.ImageClient == nil || genCtx.Storage == nil {
+		content.Elements = dropImageElements(content.Elements)
+		return
+	}
+	out := make([]types.SlideElement, 0, len(content.Elements))
+	for _, el := range content.Elements {
+		if el.Type != types.SlideElementImage || el.Src != "" {
+			out = append(out, el)
+			continue
+		}
+		url, err := generateOneImage(ctx, section, genCtx, el)
+		if err != nil {
+			slog.Warn("slide image generation failed, dropping element",
+				"section_id", section.ID.String(), "element_id", el.ID, "error", err)
+			continue
+		}
+		el.Src = url
+		out = append(out, el)
+	}
+	content.Elements = out
+}
+
+// generateOneImage 生成单张图片并写入对象存储，返回可访问 url。
+// 优先使用与元素宽高比匹配的尺寸；该尺寸失败时回退默认正方形尺寸再试一次。
+func generateOneImage(ctx context.Context, section *types.Section, genCtx *types.GenerationContext, el types.SlideElement) (string, error) {
+	sizes := imageSizeCandidates(el.Width, el.Height)
+	var url string
+	var lastErr error
+	for _, size := range sizes {
+		var u string
+		err := retryCall(func() error {
+			resp, gerr := genCtx.ImageClient.GenerateImage(ctx, model.ImageRequest{Prompt: el.Prompt, Size: size})
+			if gerr != nil {
+				return gerr
+			}
+			if len(resp.Data) == 0 {
+				return errors.New("slide image: empty image data")
+			}
+			key := fmt.Sprintf("courses/%s/sections/%s/%s.png", section.CourseID.String(), section.ID.String(), el.ID)
+			stored, perr := genCtx.Storage.Put(ctx, key, bytes.NewReader(resp.Data))
+			if perr != nil {
+				return perr
+			}
+			u = stored
+			return nil
+		})
+		if err == nil {
+			url = u
+			return url, nil
+		}
+		lastErr = err
+	}
+	return "", lastErr
+}
+
+// defaultImageSize 文生图默认尺寸。
+const defaultImageSize = "1024x1024"
+
+// imageSizeCandidates 按元素宽高比返回候选生成尺寸（首个优先，末位为默认兜底）。
+func imageSizeCandidates(width, height int) []string {
+	if width <= 0 || height <= 0 {
+		return []string{defaultImageSize}
+	}
+	ratio := float64(width) / float64(height)
+	switch {
+	case ratio >= 1.2:
+		return []string{"1536x1024", defaultImageSize}
+	case ratio <= 0.83:
+		return []string{"1024x1536", defaultImageSize}
+	default:
+		return []string{defaultImageSize}
+	}
+}
+
+// dropImageElements 移除全部 image 元素（图片模型不可用时调用）。
+func dropImageElements(in []types.SlideElement) []types.SlideElement {
+	out := make([]types.SlideElement, 0, len(in))
+	for _, el := range in {
+		if el.Type == types.SlideElementImage {
+			continue
+		}
+		out = append(out, el)
+	}
+	return out
+}
+
 // ---- 渲染与调用 ----
 
 // renderSlideMessages 渲染给定 user 模板并拼接对应 system 提示词。
@@ -227,6 +321,17 @@ func sanitizeSlideElements(in []types.SlideElement) []types.SlideElement {
 		}
 		switch el.Type {
 		case types.SlideElementText, types.SlideElementFormula, types.SlideElementShape, types.SlideElementList:
+		case types.SlideElementImage:
+			// 图片元素需有生成提示词；尺寸缺省时给默认值，保证前端可渲染、生成有宽高比。
+			if strings.TrimSpace(el.Prompt) == "" && el.Src == "" {
+				continue
+			}
+			if el.Width <= 0 {
+				el.Width = 480
+			}
+			if el.Height <= 0 {
+				el.Height = 360
+			}
 		default:
 			continue
 		}
@@ -335,6 +440,11 @@ func slideElementSummary(c *types.SlideContent) string {
 			if len(el.Items) > 0 {
 				b.WriteString(" 条目: ")
 				b.WriteString(summarizeText(strings.Join(el.Items, " / "), 100))
+			}
+		case types.SlideElementImage:
+			if el.Prompt != "" {
+				b.WriteString(" 图片: ")
+				b.WriteString(summarizeText(el.Prompt, 100))
 			}
 		}
 		b.WriteString("\n")

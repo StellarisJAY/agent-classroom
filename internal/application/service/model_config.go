@@ -53,8 +53,10 @@ func (s *ModelConfigService) Create(ctx context.Context, userID types.ID, req *t
 	if err != nil {
 		return nil, err
 	}
+	kind := normalizeKind(req.Kind)
 	m := &types.UserModelConfig{
 		UserID:          userID,
+		Kind:            kind,
 		Provider:        req.Provider,
 		Model:           req.Model,
 		BaseURL:         req.BaseURL,
@@ -65,7 +67,7 @@ func (s *ModelConfigService) Create(ctx context.Context, userID types.ID, req *t
 	}
 	if req.IsDefault {
 		err = s.tm.Transaction(ctx, func(ctx context.Context) error {
-			if err := s.repo.ClearDefault(ctx, userID); err != nil {
+			if err := s.repo.ClearDefault(ctx, userID, kind); err != nil {
 				return err
 			}
 			return s.repo.Create(ctx, m)
@@ -77,7 +79,7 @@ func (s *ModelConfigService) Create(ctx context.Context, userID types.ID, req *t
 		return nil, err
 	}
 	return &types.ModelConfigInfo{
-		ID: m.ID, Provider: m.Provider, Model: m.Model, BaseURL: m.BaseURL,
+		ID: m.ID, Kind: m.Kind, Provider: m.Provider, Model: m.Model, BaseURL: m.BaseURL,
 		APIKeyMasked: maskKey(req.APIKey), IsDefault: m.IsDefault,
 	}, nil
 }
@@ -90,7 +92,11 @@ func (s *ModelConfigService) Update(ctx context.Context, userID, id types.ID, re
 		}
 		return nil, err
 	}
+	origKind := cur.Kind
 	// 覆盖可选字段
+	if req.Kind != "" {
+		cur.Kind = normalizeKind(req.Kind)
+	}
 	if req.Provider != "" {
 		cur.Provider = req.Provider
 	}
@@ -115,7 +121,7 @@ func (s *ModelConfigService) Update(ctx context.Context, userID, id types.ID, re
 	// 切换为默认时才需跨行清理；否则单行更新。
 	if req.IsDefault && !cur.IsDefault {
 		err = s.tm.Transaction(ctx, func(ctx context.Context) error {
-			if err := s.repo.ClearDefault(ctx, userID); err != nil {
+			if err := s.repo.ClearDefault(ctx, userID, normalizeKind(cur.Kind)); err != nil {
 				return err
 			}
 			cur.IsDefault = true
@@ -126,9 +132,25 @@ func (s *ModelConfigService) Update(ctx context.Context, userID, id types.ID, re
 			return nil, err
 		}
 	} else {
-		cur.IsDefault = req.IsDefault
-		if err := s.repo.Update(ctx, cur); err != nil {
-			return nil, err
+		// 已是默认的配置变更 kind 时，旧 kind 的默认标记需一并清除，避免默认串 kind。
+		if cur.IsDefault && req.Kind != "" && normalizeKind(origKind) != normalizeKind(req.Kind) {
+			oldKind := origKind
+			err = s.tm.Transaction(ctx, func(ctx context.Context) error {
+				cur.IsDefault = req.IsDefault
+				cur.UpdateAt = time.Now()
+				if err := s.repo.Update(ctx, cur); err != nil {
+					return err
+				}
+				return s.repo.ClearDefault(ctx, userID, normalizeKind(oldKind))
+			})
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			cur.IsDefault = req.IsDefault
+			if err := s.repo.Update(ctx, cur); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -155,7 +177,7 @@ func (s *ModelConfigService) SetDefault(ctx context.Context, userID, id types.ID
 		return nil
 	}
 	return s.tm.Transaction(ctx, func(ctx context.Context) error {
-		if err := s.repo.ClearDefault(ctx, userID); err != nil {
+		if err := s.repo.ClearDefault(ctx, userID, normalizeKind(cur.Kind)); err != nil {
 			return err
 		}
 		cur.IsDefault = true
@@ -174,21 +196,26 @@ func (s *ModelConfigService) toInfo(_ context.Context, m *types.UserModelConfig)
 		}
 	}
 	return &types.ModelConfigInfo{
-		ID: m.ID, Provider: m.Provider, Model: m.Model, BaseURL: m.BaseURL,
+		ID: m.ID, Kind: normalizeKind(m.Kind), Provider: m.Provider, Model: m.Model, BaseURL: m.BaseURL,
 		APIKeyMasked: maskKey(plain), IsDefault: m.IsDefault,
 	}, nil
 }
 
-// ResolveDefault 解析用户默认配置为可用 ProviderConfig；无默认时回退服务端兜底配置。
+// ResolveDefault 解析用户默认 LLM 配置为可用 ProviderConfig；无默认时回退服务端兜底配置。
 func (s *ModelConfigService) ResolveDefault(ctx context.Context, userID types.ID) (model.ProviderConfig, error) {
-	m, err := s.repo.GetDefault(ctx, userID)
+	return s.ResolveDefaultByKind(ctx, userID, types.ModelKindLLM)
+}
+
+// ResolveDefaultByKind 解析用户指定用途的默认配置为可用 ProviderConfig；无默认时回退服务端兜底配置。
+func (s *ModelConfigService) ResolveDefaultByKind(ctx context.Context, userID types.ID, kind string) (model.ProviderConfig, error) {
+	m, err := s.repo.GetDefaultByKind(ctx, userID, normalizeKind(kind))
 	if err == nil {
 		return s.resolveConfig(m)
 	}
 	if !errors.Is(err, types.ErrNotFound) {
 		return model.ProviderConfig{}, err
 	}
-	d := s.cfg.Model.Default
+	d := s.fallbackConfig(kind)
 	return model.ProviderConfig{
 		Provider:      d.Provider,
 		Model:         d.Model,
@@ -197,6 +224,14 @@ func (s *ModelConfigService) ResolveDefault(ctx context.Context, userID types.ID
 		Timeout:       s.cfg.Model.Timeout,
 		StreamTimeout: s.cfg.Model.StreamTimeout,
 	}, nil
+}
+
+// fallbackConfig 返回指定用途的服务端兜底模型配置；image 用 image 段，其余用 default 段。
+func (s *ModelConfigService) fallbackConfig(kind string) config.ModelDefaultConfig {
+	if normalizeKind(kind) == types.ModelKindImage {
+		return s.cfg.Model.Image
+	}
+	return s.cfg.Model.Default
 }
 
 // ResolveByID 解析指定配置为 ProviderConfig；未找到返回 ErrModelConfigNotFound。
@@ -225,6 +260,14 @@ func (s *ModelConfigService) resolveConfig(m *types.UserModelConfig) (model.Prov
 		Timeout:       s.cfg.Model.Timeout,
 		StreamTimeout: s.cfg.Model.StreamTimeout,
 	}, nil
+}
+
+// normalizeKind 将空 kind 归一为 llm。
+func normalizeKind(kind string) string {
+	if kind == "" {
+		return types.ModelKindLLM
+	}
+	return kind
 }
 
 func validateBaseURL(baseURL string) error {

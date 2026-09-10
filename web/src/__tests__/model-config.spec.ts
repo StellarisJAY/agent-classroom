@@ -10,6 +10,7 @@ vi.mock('@/api/model-config', () => ({
   createModelConfig:
     vi.fn<
       (payload: {
+        kind: string
         provider: string
         model: string
         base_url: string
@@ -28,6 +29,7 @@ const api = vi.mocked(modelConfigApi)
 function cfg(partial: Partial<ModelConfigInfo>): ModelConfigInfo {
   return {
     id: '',
+    kind: 'llm',
     provider: 'openai',
     model: 'gpt-4o-mini',
     base_url: 'https://api.openai.com/v1',
@@ -92,6 +94,7 @@ describe('model-config store', () => {
 
     api.listModelConfigs.mockResolvedValue([cfg({ id: 'c' })])
     await store.create({
+      kind: 'llm',
       provider: 'openai',
       model: 'gpt',
       base_url: 'https://api.openai.com/v1',

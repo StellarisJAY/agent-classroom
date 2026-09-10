@@ -76,6 +76,10 @@ type GenerationContext struct {
 	DocsText string
 	// Client 本次生成使用的 LLM 客户端
 	Client model.LLMClient
+	// ImageClient 本次生成使用的文生图客户端；为 nil 表示未配置图片模型，生成器应跳过图片。
+	ImageClient model.ImageClient
+	// Storage 生成产物（如 slide 图片）的对象存储；为 nil 时跳过需要存储的环节。
+	Storage Storage
 	// Thinking 模型思考限制
 	Thinking string
 }

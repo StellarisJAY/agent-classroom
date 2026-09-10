@@ -34,9 +34,11 @@ type CryptoConfig struct {
 
 // ModelConfig 模型相关配置。
 type ModelConfig struct {
-	// Default 服务端统一兜底模型，用户无专属配置时使用。
+	// Default 服务端统一兜底 LLM 模型，用户无专属配置时使用。
 	Default ModelDefaultConfig `mapstructure:"default"`
-	// Timeout 非流式请求（大纲 / 环节内容生成）超时；思考模式 max 时自动放大 1.5 倍。
+	// Image 服务端兜底文生图模型，用户无 image 用途配置时使用。
+	Image ModelDefaultConfig `mapstructure:"image"`
+	// Timeout 非流式请求（大纲 / 环节内容生成 / 文生图）超时；思考模式 max 时自动放大 1.5 倍。
 	Timeout time.Duration `mapstructure:"timeout"`
 	// StreamTimeout 流式请求（问答）超时；0 表示不限制，由上层 context 控制。
 	StreamTimeout time.Duration `mapstructure:"stream_timeout"`
@@ -125,6 +127,11 @@ func Load() (*Config, error) {
 	v.SetDefault("model.default.model", "gpt-4o-mini")
 	v.SetDefault("model.default.base_url", "https://api.openai.com/v1")
 	v.SetDefault("model.default.api_key", "")
+
+	v.SetDefault("model.image.provider", "openai")
+	v.SetDefault("model.image.model", "gpt-image-1")
+	v.SetDefault("model.image.base_url", "https://api.openai.com/v1")
+	v.SetDefault("model.image.api_key", "")
 
 	v.SetDefault("model.timeout", 300*time.Second)
 	v.SetDefault("model.stream_timeout", 0*time.Second)

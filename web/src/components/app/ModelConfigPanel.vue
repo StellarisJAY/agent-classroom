@@ -16,8 +16,8 @@ import type { SelectOption } from 'naive-ui'
 import type { FormInst, FormRules } from 'naive-ui'
 import { AddOutline, ArrowBackOutline, CreateOutline, TrashOutline } from '@vicons/ionicons5'
 
-import { PROVIDER_PRESETS } from '@/api/model-config'
-import type { ModelConfigInfo } from '@/api/model-config'
+import { PROVIDER_PRESETS, KIND_LABEL, MODEL_KINDS } from '@/api/model-config'
+import type { ModelConfigInfo, ModelKind } from '@/api/model-config'
 import { useModelConfigStore } from '@/stores/model-config'
 
 type Mode = 'list' | 'form'
@@ -63,6 +63,7 @@ async function handleDelete(cfg: ModelConfigInfo) {
 
 // ---- 表单 ----
 interface FormState {
+  kind: ModelKind
   provider: string
   model: string
   base_url: string
@@ -71,6 +72,7 @@ interface FormState {
 }
 
 const form = reactive<FormState>({
+  kind: 'llm',
   provider: '',
   model: '',
   base_url: '',
@@ -80,11 +82,41 @@ const form = reactive<FormState>({
 
 const formTitle = computed(() => (editingId.value ? '编辑模型配置' : '新增模型配置'))
 
-/** provider 下拉选项 */
-const providerOptions: SelectOption[] = PROVIDER_PRESETS.map((p) => ({
-  label: `${p.label}（${p.value}）`,
-  value: p.value,
+/** 用途下拉选项 */
+const kindOptions = MODEL_KINDS.map((k) => ({
+  label: `${k.label}（${k.desc}）`,
+  value: k.value,
 }))
+
+/** provider 下拉选项：按当前用途过滤；编辑时若保存的 provider 不在预设中则追加展示原始值 */
+const providerOptions = computed<SelectOption[]>(() => {
+  const presets = PROVIDER_PRESETS.filter((p) => p.kinds.includes(form.kind))
+  const options: SelectOption[] = presets.map((p) => ({
+    label: `${p.label}（${p.value}）`,
+    value: p.value,
+  }))
+  if (form.provider && !presets.some((p) => p.value === form.provider)) {
+    options.push({ label: `${form.provider}（自定义）`, value: form.provider })
+  }
+  return options
+})
+
+/** 切换用途：若当前供应商不适用于新用途，则重置为该用途下的第一个预设 */
+function handleKindChange(value: ModelKind) {
+  form.kind = value
+  const available = PROVIDER_PRESETS.filter((p) => p.kinds.includes(value))
+  if (!available.some((p) => p.value === form.provider)) {
+    const fallback = available[0]
+    if (fallback) {
+      form.provider = fallback.value
+      applyProviderPreset(fallback.value)
+    } else {
+      form.provider = ''
+      form.base_url = ''
+      baseUrlLocked.value = false
+    }
+  }
+}
 
 /** 选中/切换 provider：命中预设且有 baseUrl 则自动填；locked 则锁定；其余清空 base_url */
 function applyProviderPreset(value: string) {
@@ -125,7 +157,7 @@ const rules: FormRules = {
 
 function openCreate() {
   editingId.value = null
-  Object.assign(form, { provider: '', model: '', base_url: '', api_key: '', is_default: false })
+  Object.assign(form, { kind: 'llm', provider: '', model: '', base_url: '', api_key: '', is_default: false })
   baseUrlLocked.value = false
   mode.value = 'form'
 }
@@ -133,6 +165,7 @@ function openCreate() {
 function openEdit(cfg: ModelConfigInfo) {
   editingId.value = cfg.id
   Object.assign(form, {
+    kind: (cfg.kind === 'image' ? 'image' : 'llm') as ModelKind,
     provider: cfg.provider,
     model: cfg.model,
     base_url: cfg.base_url,
@@ -158,6 +191,7 @@ async function handleSubmit() {
   try {
     if (editingId.value) {
       await modelConfigStore.update(editingId.value, {
+        kind: form.kind,
         provider: form.provider.trim(),
         model: form.model.trim(),
         base_url: form.base_url.trim(),
@@ -167,6 +201,7 @@ async function handleSubmit() {
       })
     } else {
       await modelConfigStore.create({
+        kind: form.kind,
         provider: form.provider.trim(),
         model: form.model.trim(),
         base_url: form.base_url.trim(),
@@ -196,7 +231,7 @@ onMounted(() => {
     <template v-if="mode === 'list'">
       <div class="model-config-panel__bar">
         <span class="model-config-panel__hint">
-          API Key 经服务端加密存储，默认模型用于课程生成与问答。
+          API Key 经服务端加密存储；每个用途（LLM / 文生图）可各设一个默认模型。
         </span>
         <n-button type="primary" size="small" @click="openCreate">
           <template #icon>
@@ -222,6 +257,9 @@ onMounted(() => {
         <li v-for="cfg in configs" :key="cfg.id" class="model-config-panel__item">
           <div class="model-config-panel__info">
             <div class="model-config-panel__line">
+              <span class="model-config-panel__kind" :class="`is-${cfg.kind}`">
+                {{ KIND_LABEL[cfg.kind] ?? cfg.kind }}
+              </span>
               <span class="model-config-panel__provider">{{ cfg.provider }}</span>
               <span class="model-config-panel__model">{{ cfg.model }}</span>
             </div>
@@ -235,7 +273,7 @@ onMounted(() => {
             <span
               class="model-config-panel__default"
               :class="{ 'model-config-panel__default--on': cfg.is_default }"
-              title="每个用户仅一个默认模型"
+              title="每个用途仅一个默认模型"
             >
               <n-switch
                 size="small"
@@ -292,6 +330,16 @@ onMounted(() => {
         size="small"
         class="model-config-panel__form"
       >
+        <n-form-item label="模型用途" path="kind">
+          <n-select
+            v-model:value="form.kind"
+            :options="kindOptions"
+            placeholder="选择模型用途"
+            :disabled="saving || editingId !== null"
+            @update:value="handleKindChange"
+          />
+        </n-form-item>
+
         <n-form-item label="模型供应商" path="provider">
           <n-select
             v-model:value="form.provider"
@@ -420,6 +468,24 @@ onMounted(() => {
   background: rgba(20, 184, 166, 0.1);
   padding: 1px 6px;
   border-radius: 4px;
+}
+
+.model-config-panel__kind {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid;
+}
+.model-config-panel__kind.is-llm {
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, 0.35);
+  background: rgba(37, 99, 235, 0.08);
+}
+.model-config-panel__kind.is-image {
+  color: #7c3aed;
+  border-color: rgba(124, 58, 237, 0.35);
+  background: rgba(124, 58, 237, 0.08);
 }
 
 .model-config-panel__model {

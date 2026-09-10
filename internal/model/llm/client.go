@@ -7,14 +7,14 @@ import (
 	"github.com/StellarisJAY/agent-classroom/internal/model"
 )
 
-// 本包提供 OpenAI 兼容协议的 LLM 实现，覆盖 openai/deepseek/qwen 等
+// 本包提供 OpenAI 兼容协议的 LLM 实现，覆盖 openai/deepseek/bailian 等
 // 通过自定义 base_url 适配的主流厂商。
 
 // 常见 provider 字符串（与前端下拉、user_model_config.provider 对齐）。
 const (
 	ProviderOpenAI   = "openai"
 	ProviderDeepSeek = "deepseek"
-	ProviderQwen     = "qwen"
+	ProviderBailian  = "bailian"
 )
 
 // UpstreamError 上游模型服务错误，携带 HTTP 状态码与上游 message。

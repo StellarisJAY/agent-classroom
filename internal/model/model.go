@@ -71,16 +71,40 @@ type LLMClient interface {
 // LLMFactory 根据配置构造 LLMClient 的工厂。
 type LLMFactory func(cfg ProviderConfig) LLMClient
 
+// ImageRequest 一次文生图请求。
+type ImageRequest struct {
+	// Prompt 图像描述提示词。
+	Prompt string
+	// Size 期望尺寸（如 "1024x1024"）；空串由实现取默认值。
+	Size string
+}
+
+// ImageResponse 文生图结果，Data 为解码后的图片字节。
+type ImageResponse struct {
+	Data []byte
+}
+
+// ImageClient 文生图客户端接口。
+type ImageClient interface {
+	// GenerateImage 生成一张图片，返回图片字节。
+	GenerateImage(ctx context.Context, req ImageRequest) (*ImageResponse, error)
+}
+
+// ImageFactory 根据配置构造 ImageClient 的工厂。
+type ImageFactory func(cfg ProviderConfig) ImageClient
+
 // Registry provider 路由表。命中注册项则用对应工厂，否则回退默认工厂。
 // 默认工厂由上层（bootstrap）注入，避免 model 包反向依赖具体实现（如 llm 包）。
 type Registry struct {
-	llm        map[string]LLMFactory
-	defaultLLM LLMFactory
+	llm          map[string]LLMFactory
+	defaultLLM   LLMFactory
+	image        map[string]ImageFactory
+	defaultImage ImageFactory
 }
 
 // NewRegistry 创建空注册表。
 func NewRegistry() *Registry {
-	return &Registry{llm: make(map[string]LLMFactory)}
+	return &Registry{llm: make(map[string]LLMFactory), image: make(map[string]ImageFactory)}
 }
 
 // RegisterLLM 为指定 provider 注册工厂（未来非 OpenAI 协议厂商的扩展点）。
@@ -100,6 +124,27 @@ func (r *Registry) NewLLM(cfg ProviderConfig) LLMClient {
 	}
 	if r.defaultLLM != nil {
 		return r.defaultLLM(cfg)
+	}
+	return nil
+}
+
+// RegisterImage 为指定 provider 注册文生图工厂。
+func (r *Registry) RegisterImage(provider string, f ImageFactory) {
+	r.image[provider] = f
+}
+
+// SetDefaultImageFactory 设置文生图未命中注册表时的回退工厂。
+func (r *Registry) SetDefaultImageFactory(f ImageFactory) {
+	r.defaultImage = f
+}
+
+// NewImage 按 provider 路由构造文生图客户端；未命中且无默认工厂时返回 nil。
+func (r *Registry) NewImage(cfg ProviderConfig) ImageClient {
+	if f, ok := r.image[cfg.Provider]; ok {
+		return f(cfg)
+	}
+	if r.defaultImage != nil {
+		return r.defaultImage(cfg)
 	}
 	return nil
 }

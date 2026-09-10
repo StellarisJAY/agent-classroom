@@ -155,11 +155,15 @@ export const OutlineCount = {
   Max: 30,
 } as const
 
-/** 创建课程的模型/思考/大纲环节数选项 */
+/** 创建课程的模型/思考/大纲环节数/配图选项 */
 export interface CourseGenOptions {
   modelConfigId?: string
   thinking?: ThinkingValue
   outlineCount?: number
+  /** 是否生成幻灯片配图；为 false 时不传 generate_images */
+  generateImages?: boolean
+  /** 配图模型配置（kind=image）；为空且开启配图时跟随用户默认 image 配置 */
+  imageModelConfigId?: string
 }
 
 /** 创建草稿课程（multipart：prompt + files[]，参考文档仅 txt/md） */
@@ -174,6 +178,9 @@ export function createCourse(
   if (opts?.modelConfigId) form.append('model_config_id', opts.modelConfigId)
   if (opts?.thinking) form.append('thinking', opts.thinking)
   if (typeof opts?.outlineCount === 'number') form.append('outline_count', String(opts.outlineCount))
+  if (opts?.generateImages) form.append('generate_images', 'true')
+  if (opts?.generateImages && opts.imageModelConfigId)
+    form.append('image_model_config_id', opts.imageModelConfigId)
   return request<CourseCreateResult>({ url: '/courses', method: 'post', data: form })
 }
 

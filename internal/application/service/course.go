@@ -175,8 +175,10 @@ func (s *CourseService) Create(ctx context.Context, userID types.ID, req *types.
 		Title:         "",
 		Prompt:        prompt,
 		Status:        types.CourseStatusDraft,
-		ModelConfigID: req.ModelConfigID,
-		Thinking:      normalizeThinking(req.Thinking),
+		ModelConfigID:      req.ModelConfigID,
+		GenerateImages:     req.GenerateImages,
+		ImageModelConfigID: req.ImageModelConfigID,
+		Thinking:           normalizeThinking(req.Thinking),
 		OutlineCount:  normalizeOutlineCount(req.OutlineCount),
 		CreateBy:      &userID,
 	}

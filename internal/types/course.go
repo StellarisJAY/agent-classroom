@@ -54,8 +54,12 @@ type Course struct {
 	Prompt   string `gorm:"not null" json:"prompt"`
 	Status   string `gorm:"type:course_status;not null;default:draft" json:"status"`
 	IsPublic bool   `gorm:"not null;default:false" json:"is_public"`
-	// ModelConfigID 该课程使用哪份模型配置；为空则大纲生成时回退默认配置。
+	// ModelConfigID 该课程使用哪份 LLM 模型配置；为空则大纲生成时回退默认配置。
 	ModelConfigID *ID `gorm:"type:uuid" json:"model_config_id"`
+	// GenerateImages 是否生成幻灯片配图（false 时 slide 阶段不产图）。
+	GenerateImages bool `gorm:"not null;default:false" json:"generate_images"`
+	// ImageModelConfigID 配图使用的 image 用途模型配置；为空则跟随用户默认 image 配置。
+	ImageModelConfigID *ID `gorm:"type:uuid" json:"image_model_config_id"`
 	// Thinking 生成所用模型的思考限制：off / default / max。
 	Thinking string `gorm:"not null;default:default" json:"thinking"`
 	// OutlineCount 大纲环节数量上限（用户可调）；为空回退默认。
@@ -142,8 +146,12 @@ type CreateCourseReq struct {
 	Prompt string
 	// Files 上传的参考文档（早期仅 .txt/.md，文本提取后不落库）
 	Files []UploadedFile
-	// ModelConfigID 选择的用户模型配置；为空则生成时用默认配置。
+	// ModelConfigID 选择的用户 LLM 模型配置；为空则生成时用默认配置。
 	ModelConfigID *ID
+	// GenerateImages 是否生成幻灯片配图；false 时 slide 阶段不产图。
+	GenerateImages bool
+	// ImageModelConfigID 配图模型配置（kind=image）；为空且 GenerateImages 为真时跟随用户默认 image 配置。
+	ImageModelConfigID *ID
 	// Thinking 模型思考限制：off / default / max。
 	Thinking string
 	// OutlineCount 大纲环节数量上限；0 或缺省由 service 回退默认（5）。

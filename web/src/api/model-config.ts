@@ -1,8 +1,9 @@
 import { request, requestVoid } from './http'
 
-/** 后端 ModelConfigInfo：{ id, provider, model, base_url, api_key_masked, is_default } */
+/** 后端 ModelConfigInfo：{ id, kind, provider, model, base_url, api_key_masked, is_default } */
 export interface ModelConfigInfo {
   id: string
+  kind: string
   provider: string
   model: string
   base_url: string
@@ -10,8 +11,22 @@ export interface ModelConfigInfo {
   is_default: boolean
 }
 
+/** 模型用途：llm=大纲/内容/讲解；image=文生图 */
+export type ModelKind = 'llm' | 'image'
+
+export const MODEL_KINDS: { value: ModelKind; label: string; desc: string }[] = [
+  { value: 'llm', label: 'LLM 对话', desc: '用于大纲、内容与讲解生成' },
+  { value: 'image', label: '文生图', desc: '用于 slide 幻灯片配图生成' },
+]
+
+export const KIND_LABEL: Record<string, string> = {
+  llm: 'LLM',
+  image: '文生图',
+}
+
 /** 新增模型配置请求体 */
 export interface CreateModelConfigPayload {
+  kind: ModelKind
   provider: string
   model: string
   base_url: string
@@ -21,6 +36,7 @@ export interface CreateModelConfigPayload {
 
 /** 编辑模型配置请求体；字段缺省表示不改（api_key 留空表示不覆盖） */
 export interface UpdateModelConfigPayload {
+  kind?: ModelKind
   provider?: string
   model?: string
   base_url?: string
@@ -36,12 +52,32 @@ export interface ProviderPreset {
   baseUrl: string
   /** 是否锁定 API 地址（只读） */
   locked: boolean
+  /** 该供应商适用的用途 */
+  kinds: ModelKind[]
 }
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
-  { value: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', locked: false },
-  { value: 'deepseek', label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', locked: true },
-  { value: 'qwen', label: '通义千问', baseUrl: '', locked: false },
+  {
+    value: 'openai',
+    label: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    locked: false,
+    kinds: ['llm', 'image'],
+  },
+  {
+    value: 'deepseek',
+    label: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com/v1',
+    locked: true,
+    kinds: ['llm'],
+  },
+  {
+    value: 'bailian',
+    label: '阿里云百炼',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    locked: false,
+    kinds: ['llm', 'image'],
+  },
 ]
 
 /** 获取当前用户全部模型配置 */

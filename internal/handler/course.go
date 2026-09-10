@@ -65,6 +65,22 @@ func (h *CourseHandler) Create(c *gin.Context) {
 		}
 		req.ModelConfigID = &id
 	}
+	if raw := c.PostForm("generate_images"); raw != "" {
+		b, berr := strconv.ParseBool(raw)
+		if berr != nil {
+			Error(c, types.NewError(types.CodeBadRequest, "generate_images 不合法"))
+			return
+		}
+		req.GenerateImages = b
+	}
+	if raw := c.PostForm("image_model_config_id"); raw != "" {
+		id, perr := types.ParseID(raw)
+		if perr != nil {
+			Error(c, types.NewError(types.CodeBadRequest, "image_model_config_id 不合法"))
+			return
+		}
+		req.ImageModelConfigID = &id
+	}
 	if raw := c.PostForm("outline_count"); raw != "" {
 		n, nerr := strconv.Atoi(raw)
 		if nerr != nil {

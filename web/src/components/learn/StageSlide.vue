@@ -7,6 +7,7 @@ import type {
   SlideContent,
   SlideElement,
   SlideFormulaElement,
+  SlideImageElement,
   SlideListElement,
   SlideShapeElement,
   SlideTextElement,
@@ -110,6 +111,10 @@ function shapeKind(el: SlideShapeElement): string {
   return ''
 }
 
+function imageStyle(el: SlideImageElement) {
+  return { left: px(el.x), top: px(el.y), width: px(el.width), height: px(el.height) }
+}
+
 function isText(e: SlideElement): e is SlideTextElement {
   return e.type === 'text'
 }
@@ -121,6 +126,9 @@ function isShape(e: SlideElement): e is SlideShapeElement {
 }
 function isList(e: SlideElement): e is SlideListElement {
   return e.type === 'list'
+}
+function isImage(e: SlideElement): e is SlideImageElement {
+  return e.type === 'image'
 }
 
 // ---- 步骤动作叠加层（underline / highlight / box，多动作）----
@@ -238,6 +246,15 @@ watch([() => store.stepIndex, () => store.currentIndex], async () => {
               <li v-for="(it, i) in el.items" :key="i">{{ it }}</li>
             </ul>
           </div>
+
+          <img
+            v-else-if="isImage(el)"
+            :ref="(n) => setRef(el.id, n)"
+            class="stage-el stage-el--image"
+            :style="imageStyle(el)"
+            :src="el.src"
+            :alt="el.prompt ?? ''"
+          />
         </template>
 
         <div
@@ -333,6 +350,10 @@ watch([() => store.stepIndex, () => store.currentIndex], async () => {
 
 .stage-el--list {
   color: #334155;
+}
+.stage-el--image {
+  object-fit: contain;
+  border-radius: 4px;
 }
 .stage-el--list-ol,
 .stage-el--list-ul {

@@ -40,6 +40,7 @@ func (r *modelConfigRepo) Update(ctx context.Context, m *types.UserModelConfig) 
 	res := r.db(ctx).Model(&types.UserModelConfig{}).
 		Where("id = ? AND user_id = ?", m.ID, m.UserID).
 		Updates(map[string]any{
+			"kind":              m.Kind,
 			"provider":          m.Provider,
 			"model":             m.Model,
 			"base_url":          m.BaseURL,
@@ -78,9 +79,9 @@ func (r *modelConfigRepo) ListByUser(ctx context.Context, userID types.ID) ([]ty
 	return list, nil
 }
 
-func (r *modelConfigRepo) GetDefault(ctx context.Context, userID types.ID) (*types.UserModelConfig, error) {
+func (r *modelConfigRepo) GetDefaultByKind(ctx context.Context, userID types.ID, kind string) (*types.UserModelConfig, error) {
 	var m types.UserModelConfig
-	err := r.db(ctx).Where("user_id = ? AND is_default", userID).First(&m).Error
+	err := r.db(ctx).Where("user_id = ? AND kind = ? AND is_default", userID, kind).First(&m).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, types.ErrNotFound
 	}
@@ -101,9 +102,9 @@ func (r *modelConfigRepo) Delete(ctx context.Context, userID, id types.ID) error
 	return nil
 }
 
-func (r *modelConfigRepo) ClearDefault(ctx context.Context, userID types.ID) error {
+func (r *modelConfigRepo) ClearDefault(ctx context.Context, userID types.ID, kind string) error {
 	return r.db(ctx).
 		Model(&types.UserModelConfig{}).
-		Where("user_id = ? AND is_default", userID).
+		Where("user_id = ? AND kind = ? AND is_default", userID, kind).
 		Update("is_default", false).Error
 }

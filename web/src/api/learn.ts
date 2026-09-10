@@ -90,8 +90,23 @@ export interface SlideListElement {
   fontSize?: number
 }
 
+export interface SlideImageElement {
+  id: string
+  type: 'image'
+  x: number
+  y: number
+  width: number
+  height: number
+  src: string
+  prompt?: string
+}
+
 export type SlideElement =
-  SlideTextElement | SlideFormulaElement | SlideShapeElement | SlideListElement
+  | SlideTextElement
+  | SlideFormulaElement
+  | SlideShapeElement
+  | SlideListElement
+  | SlideImageElement
 
 export interface SlideContent {
   width: number

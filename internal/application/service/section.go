@@ -396,6 +396,21 @@ func (s *SectionService) buildGenerationContext(ctx context.Context, userID type
 		return types.GenerationContext{}, types.ErrNoModelConfig
 	}
 
+	// 文生图为可选能力：课程关闭配图时不产图；开启时优先用绑定配置，否则跟随用户默认 image 配置。
+	var imageClient model.ImageClient
+	if course.GenerateImages {
+		var imgCfg model.ProviderConfig
+		var ierr error
+		if course.ImageModelConfigID != nil && *course.ImageModelConfigID != types.NilID {
+			imgCfg, ierr = s.modelCfgSvc.ResolveByID(ctx, userID, *course.ImageModelConfigID)
+		} else {
+			imgCfg, ierr = s.modelCfgSvc.ResolveDefaultByKind(ctx, userID, types.ModelKindImage)
+		}
+		if ierr == nil && imgCfg.Model != "" && imgCfg.APIKey != "" {
+			imageClient = s.registry.NewImage(imgCfg)
+		}
+	}
+
 	secs, err := s.sectionRepo.ListByCourse(ctx, course.ID)
 	if err != nil {
 		return types.GenerationContext{}, err
@@ -410,6 +425,8 @@ func (s *SectionService) buildGenerationContext(ctx context.Context, userID type
 		OutlineSections: sectionsToOutline(secs),
 		DocsText:        docsText,
 		Client:          client,
+		ImageClient:     imageClient,
+		Storage:         s.storage,
 		Thinking:        course.Thinking,
 	}, nil
 }
