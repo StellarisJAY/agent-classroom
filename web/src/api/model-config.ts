@@ -50,6 +50,8 @@ export interface ProviderPreset {
   label: string
   /** 自动填写的 API 地址；空串表示不自动填（需用户输入） */
   baseUrl: string
+  /** 该供应商在文生图用途下的 API 地址（缺省回退 baseUrl），因协议不同可能异于 LLM 地址 */
+  imageBaseUrl?: string
   /** 是否锁定 API 地址（只读） */
   locked: boolean
   /** 该供应商适用的用途 */
@@ -75,6 +77,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     value: 'bailian',
     label: '阿里云百炼',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    imageBaseUrl: 'https://dashscope.aliyuncs.com/api/v1/services/aigc',
     locked: false,
     kinds: ['llm', 'image'],
   },

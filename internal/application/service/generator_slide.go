@@ -179,6 +179,7 @@ func (g *slideGenerator) generateImages(ctx context.Context, section *types.Sect
 			out = append(out, el)
 			continue
 		}
+		slog.Debug("generating image element", "prompt", el.Prompt)
 		url, err := generateOneImage(ctx, section, genCtx, el)
 		if err != nil {
 			slog.Warn("slide image generation failed, dropping element",

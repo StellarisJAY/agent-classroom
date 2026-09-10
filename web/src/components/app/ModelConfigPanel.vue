@@ -118,11 +118,12 @@ function handleKindChange(value: ModelKind) {
   }
 }
 
-/** 选中/切换 provider：命中预设且有 baseUrl 则自动填；locked 则锁定；其余清空 base_url */
+/** 选中/切换 provider：命中预设且有 baseUrl 则按当前用途自动填；locked 则锁定；其余清空 base_url */
 function applyProviderPreset(value: string) {
   const preset = PROVIDER_PRESETS.find((p) => p.value === value)
-  if (preset && preset.baseUrl) {
-    form.base_url = preset.baseUrl
+  const url = preset && form.kind === 'image' ? preset.imageBaseUrl ?? preset.baseUrl : preset?.baseUrl
+  if (preset && url) {
+    form.base_url = url
     baseUrlLocked.value = preset.locked
   } else {
     form.base_url = ''

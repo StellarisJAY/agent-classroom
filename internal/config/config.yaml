@@ -46,6 +46,20 @@ model:
   # 流式请求（问答）超时；0 表示不限制，由上层 context 控制
   stream_timeout: 0s
 
+storage:
+  # 存储后端：local（本地磁盘）| minio
+  type: local
+  # type=local 时的根目录
+  local_dir: ./data/uploads
+  # type=minio 时生效（生产通过 APP_STORAGE_MINIO_* 覆盖密钥）
+  minio:
+    endpoint: localhost:9000
+    access_key: ""
+    secret_key: ""
+    bucket: agent-classroom
+    use_ssl: false
+    region: us-east-1
+
 log:
   level: info          # debug | info | warn | error
   format: text         # text | json

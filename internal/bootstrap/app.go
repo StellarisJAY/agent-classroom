@@ -22,6 +22,7 @@ import (
 	"github.com/StellarisJAY/agent-classroom/internal/model/llm"
 	"github.com/StellarisJAY/agent-classroom/internal/router"
 	"github.com/StellarisJAY/agent-classroom/internal/storage"
+	"github.com/StellarisJAY/agent-classroom/internal/types"
 	"github.com/StellarisJAY/agent-classroom/internal/util"
 )
 
@@ -69,10 +70,21 @@ func NewApp(cfg *config.Config) (*App, error) {
 	modelRegistry := model.NewRegistry()
 	modelRegistry.SetDefaultLLMFactory(llm.NewOpenAICompatible)
 	modelRegistry.SetDefaultImageFactory(image.NewOpenAICompatible)
+	// 阿里云百炼走专属多模态协议，单独适配。
+	modelRegistry.RegisterImage(llm.ProviderBailian, image.NewBailian)
 
-	objStorage, err := storage.NewLocal(cfg.Storage.LocalDir)
-	if err != nil {
-		return nil, fmt.Errorf("init local storage: %w", err)
+	var objStorage types.Storage
+	switch cfg.Storage.Type {
+	case "minio":
+		objStorage, err = storage.NewMinio(cfg.Storage.Minio)
+		if err != nil {
+			return nil, fmt.Errorf("init minio storage: %w", err)
+		}
+	default:
+		objStorage, err = storage.NewLocal(cfg.Storage.LocalDir)
+		if err != nil {
+			return nil, fmt.Errorf("init local storage: %w", err)
+		}
 	}
 
 	courseRepo := repo.NewCourseRepo(db)

@@ -11,7 +11,10 @@ import (
 	"github.com/StellarisJAY/agent-classroom/internal/types"
 )
 
-// localStorage 基于本地磁盘的 Storage 实现（对象存储预留的落地形态）。
+// urlPrefix 所有存储后端对外统一的访问前缀，由 router 挂载 /uploads 代理读取。
+const urlPrefix = "/uploads/"
+
+// localStorage 基于本地磁盘的 Storage 实现。
 // 文件落在 baseDir 下，key 为斜杠分隔的相对路径，url 为 /uploads/<key>。
 type localStorage struct {
 	baseDir string
@@ -32,9 +35,9 @@ func NewLocal(baseDir string) (types.Storage, error) {
 }
 
 func (s *localStorage) Put(ctx context.Context, key string, r io.Reader) (string, error) {
-	rel := filepath.ToSlash(strings.TrimPrefix(filepath.Clean(filepath.FromSlash(key)), "/"))
-	if rel == "." || strings.HasPrefix(rel, "../") {
-		return "", fmt.Errorf("invalid storage key %q", key)
+	rel, err := cleanObjectKey(key)
+	if err != nil {
+		return "", err
 	}
 	dst := filepath.Join(s.baseDir, filepath.FromSlash(rel))
 	if !strings.HasPrefix(dst, s.baseDir) {
@@ -55,19 +58,15 @@ func (s *localStorage) Put(ctx context.Context, key string, r io.Reader) (string
 		return "", err
 	}
 	_ = ctx
-	return localURLPrefix + rel, nil
+	return urlPrefix + rel, nil
 }
 
-// localURLPrefix 本地存储对外暴露的静态访问前缀（由 router 挂载 /uploads 静态目录）。
-const localURLPrefix = "/uploads/"
-
 func (s *localStorage) Get(_ context.Context, url string) (io.ReadCloser, error) {
-	if !strings.HasPrefix(url, localURLPrefix) {
+	if !strings.HasPrefix(url, urlPrefix) {
 		return nil, fmt.Errorf("invalid storage url %q", url)
 	}
-	key := strings.TrimPrefix(url, localURLPrefix)
-	rel := filepath.ToSlash(filepath.Clean(filepath.FromSlash(key)))
-	if rel == "." || strings.HasPrefix(rel, "../") {
+	rel, err := cleanObjectKey(strings.TrimPrefix(url, urlPrefix))
+	if err != nil {
 		return nil, fmt.Errorf("invalid storage url %q", url)
 	}
 	f, err := os.Open(filepath.Join(s.baseDir, filepath.FromSlash(rel)))

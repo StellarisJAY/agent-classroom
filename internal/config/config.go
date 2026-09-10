@@ -20,10 +20,30 @@ type Config struct {
 	Log      LogConfig
 }
 
-// StorageConfig 对象存储配置（本期仅本地磁盘）。
+// StorageConfig 对象存储配置，type 决定使用哪种后端。
 type StorageConfig struct {
-	// LocalDir 本地存储根目录
+	// Type 存储后端：local | minio
+	Type string `mapstructure:"type"`
+	// LocalDir 本地存储根目录（type=local 时生效）
 	LocalDir string `mapstructure:"local_dir"`
+	// Minio Minio 对象存储配置（type=minio 时生效）
+	Minio MinioConfig `mapstructure:"minio"`
+}
+
+// MinioConfig Minio 对象存储连接配置。
+type MinioConfig struct {
+	// Endpoint Minio 服务地址，如 localhost:9000
+	Endpoint string `mapstructure:"endpoint"`
+	// AccessKey 访问密钥
+	AccessKey string `mapstructure:"access_key"`
+	// SecretKey 访问密钥
+	SecretKey string `mapstructure:"secret_key"`
+	// Bucket 存储桶名称
+	Bucket string `mapstructure:"bucket"`
+	// UseSSL 是否使用 HTTPS
+	UseSSL bool `mapstructure:"use_ssl"`
+	// Region 区域，默认 us-east-1
+	Region string `mapstructure:"region"`
 }
 
 // CryptoConfig AES-256-GCM 加密配置，用于 API Key 等敏感字段存储加密。
@@ -139,7 +159,14 @@ func Load() (*Config, error) {
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "text")
 
+	v.SetDefault("storage.type", "local")
 	v.SetDefault("storage.local_dir", "./data/uploads")
+	v.SetDefault("storage.minio.endpoint", "localhost:9000")
+	v.SetDefault("storage.minio.access_key", "")
+	v.SetDefault("storage.minio.secret_key", "")
+	v.SetDefault("storage.minio.bucket", "agent-classroom")
+	v.SetDefault("storage.minio.use_ssl", false)
+	v.SetDefault("storage.minio.region", "us-east-1")
 
 	// 读取同目录 config.yaml；未找到时不报错，走默认 + env
 	v.SetConfigName("config")
