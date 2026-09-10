@@ -126,12 +126,23 @@ func migrateCourseSchema(db *gorm.DB) error {
 			course_id uuid NOT NULL REFERENCES course(id) ON DELETE CASCADE,
 			content   jsonb NOT NULL,
 			status    text NOT NULL DEFAULT 'draft',
+			version   integer NOT NULL DEFAULT 1,
 			create_by uuid REFERENCES users(id) ON DELETE SET NULL,
 			create_at timestamptz NOT NULL DEFAULT now(),
 			update_by uuid REFERENCES users(id) ON DELETE SET NULL,
 			update_at timestamptz NOT NULL DEFAULT now()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_outline_course ON outline (course_id)`,
+		`CREATE TABLE IF NOT EXISTS outline_history (
+			id         uuid PRIMARY KEY,
+			outline_id uuid NOT NULL REFERENCES outline(id) ON DELETE CASCADE,
+			version    integer NOT NULL,
+			title      text NOT NULL DEFAULT '',
+			content    jsonb NOT NULL,
+			feedback   text NOT NULL DEFAULT '',
+			create_at  timestamptz NOT NULL DEFAULT now()
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uniq_outline_history_version ON outline_history (outline_id, version)`,
 		`CREATE TABLE IF NOT EXISTS document (
 			id        uuid PRIMARY KEY,
 			course_id uuid NOT NULL REFERENCES course(id) ON DELETE CASCADE,
@@ -163,6 +174,10 @@ func migrateCourseSchema(db *gorm.DB) error {
 	}
 	if err := db.Exec(`ALTER TABLE course ADD COLUMN IF NOT EXISTS thinking text NOT NULL DEFAULT 'default'`).Error; err != nil {
 		return fmt.Errorf("migrate course add thinking: %w", err)
+	}
+	// 兼容已存在的旧库：outline 补 version 列。
+	if err := db.Exec(`ALTER TABLE outline ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1`).Error; err != nil {
+		return fmt.Errorf("migrate outline add version: %w", err)
 	}
 	return nil
 }

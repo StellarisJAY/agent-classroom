@@ -206,9 +206,16 @@ type CourseService interface {
 	List(ctx context.Context, userID ID, req *CourseListReq) (*CourseListResp, error)
 	// Create 创建草稿课程并保存参考文档元数据（提取的文本不入库）。
 	Create(ctx context.Context, userID ID, req *CreateCourseReq) (*CourseCreateResp, error)
-	// GenerateOutline 生成大纲：读取课程 + 参考文档文本 → LLM 产出标题与环节列表，
-	// 持久化 outline（status=draft）并回填课程标题，返回结果供 handler 逐条 SSE 推送。
-	GenerateOutline(ctx context.Context, userID, courseID ID) (*OutlineResult, error)
+	// StartOutline 启动大纲生成任务（后台异步执行）：校验归属与 draft 状态后触发，
+	// 立即返回；进行中重复触发返回 ErrOutlineGenerating。
+	StartOutline(ctx context.Context, userID, courseID ID, feedback string) error
+	// GetOutlineTask 返回大纲生成任务状态（供前端轮询）：
+	// done（附大纲视图）/ generating / error / idle。
+	GetOutlineTask(ctx context.Context, userID, courseID ID) (*OutlineTaskView, error)
 	// GetOutline 返回某课程已保存的大纲（含 status），无则返回 ErrOutlineNotFound。
 	GetOutline(ctx context.Context, userID, courseID ID) (*OutlineView, error)
+	// ListOutlineVersions 返回某课程大纲的历史版本列表（不含 content），最新在前。
+	ListOutlineVersions(ctx context.Context, userID, courseID ID) ([]OutlineVersionView, error)
+	// RevertOutline 将大纲回退到指定历史版本，返回回退后的大纲视图。
+	RevertOutline(ctx context.Context, userID, courseID ID, version int) (*OutlineView, error)
 }

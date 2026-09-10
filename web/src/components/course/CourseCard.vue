@@ -41,12 +41,15 @@ const sourceLabel = computed(() =>
   props.item.owned ? '我创建的' : props.item.is_public ? '公共库' : '我创建的',
 )
 
-/** 生成中/草稿/大纲确认 → 预览恢复生成；已完成 → 进入学习 */
-const target = computed(() =>
-  props.item.status === CourseStatus.Completed
-    ? `/course/${props.item.id}/learn`
-    : `/preview/${props.item.id}`,
-)
+/**
+ * 内容生成中/已确认大纲（后台生成中）→ 学习页（大纲抽屉显示生成进度，未生成环节转圈）；
+ * 草稿/大纲待确认 → 预览生成；已完成 → 进入学习。
+ */
+const target = computed(() => {
+  const s = props.item.status
+  if (s === CourseStatus.Draft) return `/preview/${props.item.id}`
+  return `/course/${props.item.id}/learn`
+})
 
 function formatDate(iso: string): string {
   const d = new Date(iso)

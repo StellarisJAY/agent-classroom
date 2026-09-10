@@ -98,7 +98,24 @@ export interface GenerationSection {
 /** 后端 OutlineView（GET /courses/:id/outline） */
 export interface OutlineView {
   status: string
+  version: number
   sections: OutlineSection[]
+}
+
+/** 大纲生成任务状态（GET /courses/:id/outline/task） */
+export interface OutlineTaskView {
+  status: 'done' | 'generating' | 'error' | 'idle'
+  message?: string
+  outline?: OutlineView
+}
+
+/** 大纲历史版本列表项（POST /courses/:id/outline/versions 返回） */
+export interface OutlineVersionView {
+  version: number
+  title: string
+  feedback: string
+  current: boolean
+  created_at: string
 }
 
 /** 列表查询参数（GET query） */
@@ -165,6 +182,20 @@ export function getOutline(courseId: string): Promise<OutlineView> {
   return request<OutlineView>({ url: `/courses/${courseId}/outline`, method: 'get' })
 }
 
+/** 触发大纲后台生成任务（异步）：feedback 可为空（等价全新生成） */
+export function startOutline(courseId: string, feedback = ''): Promise<Record<string, never>> {
+  return request<Record<string, never>>({
+    url: `/courses/${courseId}/outline/regenerate`,
+    method: 'post',
+    data: { feedback },
+  })
+}
+
+/** 轮询大纲生成任务状态；status=done 时附带已保存大纲 */
+export function getOutlineTask(courseId: string): Promise<OutlineTaskView> {
+  return request<OutlineTaskView>({ url: `/courses/${courseId}/outline/task`, method: 'get' })
+}
+
 /** 确认大纲：提交最终有序环节列表，后端覆盖大纲并物化，随后后台串行生成内容。
  *  返回物化后的环节生成进度。 */
 export function confirmOutline(
@@ -178,7 +209,29 @@ export function confirmOutline(
   })
 }
 
-/** 查询某课程全部环节当前生成进度（用于进入页面时恢复/推导步骤）。 */
+/** 查询大纲历史版本列表（最新在前） */
+export function listOutlineVersions(courseId: string): Promise<OutlineVersionView[]> {
+  return request<OutlineVersionView[]>({ url: `/courses/${courseId}/outline/versions`, method: 'get' })
+}
+
+/** 回退大纲到指定历史版本，返回回退后的大纲视图 */
+export function revertOutline(courseId: string, version: number): Promise<OutlineView> {
+  return request<OutlineView>({
+    url: `/courses/${courseId}/outline/revert`,
+    method: 'post',
+    data: { version },
+  })
+}
+
+/** 查询某课程全部环节当前生成进度（轮询获取内容生成进度）。 */
 export function getSections(courseId: string): Promise<GenerationSection[]> {
   return request<GenerationSection[]>({ url: `/courses/${courseId}/sections`, method: 'get' })
+}
+
+/** 恢复内容生成：中断/重启后续跑未完成环节（后端串行跳过已 done）。 */
+export function resumeGeneration(courseId: string): Promise<Record<string, never>> {
+  return request<Record<string, never>>({
+    url: `/courses/${courseId}/generate/resume`,
+    method: 'post',
+  })
 }

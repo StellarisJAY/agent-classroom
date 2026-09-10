@@ -2,10 +2,7 @@ package handler
 
 import (
 	"bytes"
-	"encoding/json"
-	"errors"
 	"io"
-	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -103,7 +100,7 @@ func (h *CourseHandler) GetOutline(c *gin.Context) {
 	OK(c, outline)
 }
 
-// GenerateOutline 流式返回生成的大纲（SSE）。
+// GenerateOutline 触发大纲后台生成任务（异步）。
 func (h *CourseHandler) GenerateOutline(c *gin.Context) {
 	userID, ok := currentUser(c)
 	if !ok {
@@ -114,43 +111,96 @@ func (h *CourseHandler) GenerateOutline(c *gin.Context) {
 		Error(c, err)
 		return
 	}
-
-	w := c.Writer
-	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
-	flush(w)
-
-	// 立即发送 start 事件以刷出响应头，避免长时空白
-	if err := util.WriteSSEEvent(w, "start", "{}"); err != nil {
+	if err := h.svc.StartOutline(c.Request.Context(), userID, courseID, ""); err != nil {
+		Error(c, err)
 		return
 	}
-	flush(w)
+	OK(c, gin.H{})
+}
 
-	result, err := h.svc.GenerateOutline(c.Request.Context(), userID, courseID)
+// RegenerateOutline 携带修改意见触发大纲重新生成任务（异步）。
+func (h *CourseHandler) RegenerateOutline(c *gin.Context) {
+	userID, ok := currentUser(c)
+	if !ok {
+		return
+	}
+	courseID, err := pathID(c)
 	if err != nil {
-		_ = util.WriteSSEError(w, errSSEMessage(err))
-		flush(w)
+		Error(c, err)
 		return
 	}
+	var req types.RegenerateOutlineReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, types.NewError(types.CodeBadRequest, "请求体不合法"))
+		return
+	}
+	if err := h.svc.StartOutline(c.Request.Context(), userID, courseID, req.Feedback); err != nil {
+		Error(c, err)
+		return
+	}
+	OK(c, gin.H{})
+}
 
-	if meta, merr := json.Marshal(gin.H{"title": result.Title}); merr == nil {
-		_ = util.WriteSSEEvent(w, "meta", string(meta))
-		flush(w)
+// OutlineTask 轮询大纲生成任务状态（done 附带大纲视图）。
+func (h *CourseHandler) OutlineTask(c *gin.Context) {
+	userID, ok := currentUser(c)
+	if !ok {
+		return
 	}
-	for i := range result.Sections {
-		payload, perr := json.Marshal(gin.H{"index": i, "section": result.Sections[i]})
-		if perr != nil {
-			continue
-		}
-		if uerr := util.WriteSSEEvent(w, "section", string(payload)); uerr != nil {
-			return
-		}
-		flush(w)
+	courseID, err := pathID(c)
+	if err != nil {
+		Error(c, err)
+		return
 	}
-	_ = util.WriteSSEDone(w)
-	flush(w)
+	task, err := h.svc.GetOutlineTask(c.Request.Context(), userID, courseID)
+	if err != nil {
+		Error(c, err)
+		return
+	}
+	OK(c, task)
+}
+
+// ListOutlineVersions 返回大纲历史版本列表。
+func (h *CourseHandler) ListOutlineVersions(c *gin.Context) {
+	userID, ok := currentUser(c)
+	if !ok {
+		return
+	}
+	courseID, err := pathID(c)
+	if err != nil {
+		Error(c, err)
+		return
+	}
+	versions, err := h.svc.ListOutlineVersions(c.Request.Context(), userID, courseID)
+	if err != nil {
+		Error(c, err)
+		return
+	}
+	OK(c, versions)
+}
+
+// RevertOutline 回退大纲到指定历史版本。
+func (h *CourseHandler) RevertOutline(c *gin.Context) {
+	userID, ok := currentUser(c)
+	if !ok {
+		return
+	}
+	courseID, err := pathID(c)
+	if err != nil {
+		Error(c, err)
+		return
+	}
+	var req types.RevertOutlineReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, types.NewError(types.CodeBadRequest, "请求体不合法"))
+		return
+	}
+	outline, err := h.svc.RevertOutline(c.Request.Context(), userID, courseID, req.Version)
+	if err != nil {
+		Error(c, err)
+		return
+	}
+	OK(c, outline)
 }
 
 // readUploadedFiles 读取 multipart 的 files 字段到内存；校验数量与单文件大小。
@@ -185,20 +235,4 @@ func readUploadedFiles(c *gin.Context) ([]types.UploadedFile, error) {
 		files = append(files, types.UploadedFile{Name: fh.Filename, Data: bytes.TrimSpace(data)})
 	}
 	return files, nil
-}
-
-// flush 尽量刷新到客户端；非可刷新 Writer 时忽略。
-func flush(w io.Writer) {
-	if f, ok := w.(interface{ Flush() }); ok {
-		f.Flush()
-	}
-}
-
-// errSSEMessage 提取 SSE 错误消息；非业务错误返回通用文案。
-func errSSEMessage(err error) string {
-	var be *types.BizError
-	if errors.As(err, &be) {
-		return be.Msg
-	}
-	return types.ErrOutlineFailed.Msg
 }

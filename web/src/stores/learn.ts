@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import * as learnApi from '@/api/learn'
+import * as courseApi from '@/api/course'
 import type {
   CourseLearnDetail,
   Question,
@@ -10,12 +11,28 @@ import type {
   SlideStep,
 } from '@/api/learn'
 
+/** 内容生成进度轮询间隔。 */
+export const CONTENT_POLL_INTERVAL_MS = 3000
+/** 环节全部非 generating 且连续无进展次数达到上限判定中断，自动续跑。 */
+export const CONTENT_STALL_LIMIT = 15
+/** 自动续跑次数上限，超过后转为手动重试横幅。 */
+export const CONTENT_MAX_AUTO_RETRY = 5
+
 /** 学习页状态机：课程详情 + 环节/步骤推进 + quiz 作答 + demo 编辑 + 进度。 */
 export const useLearnStore = defineStore('learn', () => {
   const courseId = ref('')
   const detail = ref<CourseLearnDetail | null>(null)
   const loading = ref(false)
   const error = ref('')
+
+  // ---- 生成期轮询 ----
+
+  // 内容生成暂停/自动续跑状态
+  const stalled = ref(false)
+  const autoRetryCount = ref(0)
+  const generatedCount = ref(0)
+  let genTimer: ReturnType<typeof setTimeout> | null = null
+  let stallCount = 0
 
   // 导航
   const currentIndex = ref(0)
@@ -47,6 +64,15 @@ export const useLearnStore = defineStore('learn', () => {
   const isQuiz = computed(() => currentSection.value?.type === 'quiz')
   const isDemo = computed(() => learnApi.isDemoType(currentSection.value?.type ?? ''))
 
+  /** 生成期状态：当前环节尚未生成完成（舞台应显示转圈而非内容）。 */
+  const pendingSection = computed(
+    () => !!currentSection.value && currentSection.value.status !== 'done',
+  )
+  /** 全部环节已生成完成。 */
+  const allGenerated = computed(
+    () => sections.value.length > 0 && sections.value.every((s) => s.status === 'done'),
+  )
+
   const slideContent = computed<SlideContent | null>(() =>
     isSlide.value ? (currentSection.value!.content as SlideContent) : null,
   )
@@ -74,11 +100,15 @@ export const useLearnStore = defineStore('learn', () => {
     courseId.value = id
     loading.value = true
     error.value = ''
+    stopGenPolling()
     try {
       detail.value = await learnApi.getCourseDetail(id)
       reset()
       if (detail.value.progress === 'unstarted') {
         await markProgress('in_progress')
+      }
+      if (!allGenerated.value) {
+        startGenPolling()
       }
     } catch (e) {
       error.value = e instanceof Error ? e.message : '加载课程失败'
@@ -246,6 +276,104 @@ export const useLearnStore = defineStore('learn', () => {
     demoEditing.value = false
   }
 
+  // ---- 生成期轮询 ----
+
+  /** 轮询内容生成进度：只合入各环节 status（不动导航/进度）；有环节新完成时重拉详情刷新产物。
+   *  检测中断：无 generating 环节且持续无进展 → 自动续跑；超限转手动横幅。 */
+  function startGenPolling() {
+    if (genTimer !== null) return
+    stalled.value = false
+    stallCount = 0
+
+    const tick = async () => {
+      genTimer = null
+      if (!courseId.value || !detail.value) return
+      const cur = detail.value
+
+      let secs: courseApi.GenerationSection[] | null = null
+      try {
+        secs = await courseApi.getSections(courseId.value)
+      } catch {
+        // 网络抖动：下一轮再试
+      }
+      if (detail.value !== cur) return
+      if (secs) {
+        const fresh = new Map(secs.map((s) => [s.id, s]))
+        const prevDone = new Set(cur.sections.filter((s) => s.status === 'done').map((s) => s.id))
+        let nowDoneCount = 0
+        cur.sections = cur.sections.map((s) => {
+          const freshSec = fresh.get(s.id)
+          const status = freshSec?.status ?? s.status
+          if (status === 'done') nowDoneCount += 1
+          if (status !== s.status) return { ...s, status }
+          return s
+        })
+        generatedCount.value = nowDoneCount
+
+        // 有环节新完成 → 重拉详情获取最新产物（保留导航与进度）
+        const newDone = cur.sections.some(
+          (s) => s.status === 'done' && !prevDone.has(s.id),
+        )
+        if (newDone) {
+          try {
+            const fd = await learnApi.getCourseDetail(courseId.value)
+            if (detail.value === cur) cur.sections = fd.sections
+          } catch {
+            // 下轮轮询带回新 status
+          }
+        }
+      }
+
+      // 完成即停
+      if (detail.value && detail.value.sections.every((s) => s.status === 'done')) {
+        generatedCount.value = detail.value.sections.length
+        return
+      }
+
+      // 中断检测：无 generating 环节且持续无进展 → 自动续跑
+      if (detail.value.sections.some((s) => s.status === 'generating')) {
+        stallCount = 0
+      } else if (++stallCount >= CONTENT_STALL_LIMIT) {
+        if (autoRetryCount.value < CONTENT_MAX_AUTO_RETRY) {
+          autoRetryCount.value += 1
+          stalled.value = false
+          try {
+            await courseApi.resumeGeneration(courseId.value)
+          } catch {
+            // 续跑失败下一轮重新计数
+          }
+          stallCount = 0
+        } else {
+          stalled.value = true
+          return // 停止自动重试，等待手动
+        }
+      }
+      genTimer = setTimeout(tick, CONTENT_POLL_INTERVAL_MS)
+    }
+    genTimer = setTimeout(tick, CONTENT_POLL_INTERVAL_MS)
+  }
+
+  function stopGenPolling() {
+    if (genTimer !== null) {
+      clearTimeout(genTimer)
+      genTimer = null
+    }
+  }
+
+  /** 手动重试：清零自动重试计数并继续轮询。 */
+  async function retryGeneration() {
+    if (!courseId.value) return
+    autoRetryCount.value = 0
+    stalled.value = false
+    stallCount = 0
+    try {
+      await courseApi.resumeGeneration(courseId.value)
+    } catch {
+      // 轮询下一轮会继续
+    }
+    startGenPolling()
+  }
+
   // ---- 进度上报 ----
 
   async function markProgress(status: CourseLearnDetail['progress']) {
@@ -267,6 +395,14 @@ export const useLearnStore = defineStore('learn', () => {
     isSlide,
     isQuiz,
     isDemo,
+    // 生成期
+    pendingSection,
+    allGenerated,
+    generatedCount,
+    autoRetryCount,
+    stalled,
+    retryGeneration,
+    stopGenPolling,
     slideContent,
     slideSteps,
     stepIndex,

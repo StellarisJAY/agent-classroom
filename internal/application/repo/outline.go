@@ -57,6 +57,27 @@ func (r *outlineRepo) UpdateContentStatus(ctx context.Context, courseID types.ID
 	return nil
 }
 
+func (r *outlineRepo) UpdateContentVersion(ctx context.Context, courseID types.ID, content datatypes.JSON, version int, by *types.ID) error {
+	now := time.Now()
+	res := r.db(ctx).
+		Model(&types.Outline{}).
+		Where("course_id = ?", courseID).
+		Updates(map[string]any{
+			"content":   content,
+			"status":    types.OutlineStatusDraft,
+			"version":   version,
+			"update_by": by,
+			"update_at": now,
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return types.ErrNotFound
+	}
+	return nil
+}
+
 func (r *outlineRepo) GetByCourse(ctx context.Context, courseID types.ID) (*types.Outline, error) {
 	var o types.Outline
 	err := r.db(ctx).Where("course_id = ?", courseID).First(&o).Error

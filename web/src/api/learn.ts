@@ -205,8 +205,8 @@ export async function getCourseDetail(courseId: string): Promise<CourseLearnDeta
     method: 'get',
   })
   detail.sections = detail.sections.map((s) => {
-    // demo_basic 可运行预览：后端尚未生成真实内容，兜底注入可运行示例。
-    if (s.type === SectionType.DemoBasic && !isDemoContent(s.content)) {
+    // demo_basic 环节已生成完成时兜底注入可运行示例；生成中环节保持 null 以显示转圈。
+    if (s.type === SectionType.DemoBasic && s.status === SectionStatus.Done && !isDemoContent(s.content)) {
       return { ...s, content: { ...mock.DEMO_CONTENT } }
     }
     return s

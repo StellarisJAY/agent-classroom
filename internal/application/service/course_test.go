@@ -76,6 +76,9 @@ func (m *mockOutlineRepo) UpdateContentStatus(_ context.Context, courseID types.
 	}
 	return nil
 }
+func (m *mockOutlineRepo) UpdateContentVersion(_ context.Context, _ types.ID, _ datatypes.JSON, _ int, _ *types.ID) error {
+	return nil
+}
 func (m *mockOutlineRepo) GetByCourse(_ context.Context, courseID types.ID) (*types.Outline, error) {
 	if m.getBy != nil {
 		return m.getBy(courseID)
@@ -85,6 +88,40 @@ func (m *mockOutlineRepo) GetByCourse(_ context.Context, courseID types.ID) (*ty
 func (m *mockOutlineRepo) DeleteByCourse(_ context.Context, courseID types.ID) error {
 	if m.deleteBy != nil {
 		return m.deleteBy(courseID)
+	}
+	return nil
+}
+
+type mockHistoryRepo struct {
+	create    func(*types.OutlineHistory) error
+	listBy    func(types.ID) ([]types.OutlineHistory, error)
+	getByVer  func(types.ID, int) (*types.OutlineHistory, error)
+	prune     func(types.ID, int) error
+}
+
+var _ types.OutlineHistoryRepo = (*mockHistoryRepo)(nil)
+
+func (m *mockHistoryRepo) Create(_ context.Context, h *types.OutlineHistory) error {
+	if m.create != nil {
+		return m.create(h)
+	}
+	return nil
+}
+func (m *mockHistoryRepo) ListByOutline(_ context.Context, outlineID types.ID) ([]types.OutlineHistory, error) {
+	if m.listBy != nil {
+		return m.listBy(outlineID)
+	}
+	return nil, nil
+}
+func (m *mockHistoryRepo) GetByVersion(_ context.Context, outlineID types.ID, version int) (*types.OutlineHistory, error) {
+	if m.getByVer != nil {
+		return m.getByVer(outlineID, version)
+	}
+	return nil, types.ErrNotFound
+}
+func (m *mockHistoryRepo) Prune(_ context.Context, outlineID types.ID, keep int) error {
+	if m.prune != nil {
+		return m.prune(outlineID, keep)
 	}
 	return nil
 }
@@ -165,13 +202,14 @@ func (m *mockModelCfgSvc) SetDefault(context.Context, types.ID, types.ID) error 
 func newCourseSvc(repo types.CourseRepo) types.CourseService {
 	set := defaultMockSet()
 	set.course = repo
-	return NewCourseService(set.course, set.outline, set.doc, passTM{}, set.storage, set.cfgSvc, set.registry)
+	return NewCourseService(set.course, set.outline, set.history, set.doc, passTM{}, set.storage, set.cfgSvc, set.registry)
 }
 
 // mockSet 汇总本测试所需各 repo mock。
 type mockSet struct {
 	course   types.CourseRepo
 	outline  types.OutlineRepo
+	history  types.OutlineHistoryRepo
 	doc      types.DocumentRepo
 	storage  types.Storage
 	cfgSvc   types.ModelConfigService
@@ -182,6 +220,7 @@ func defaultMockSet() *mockSet {
 	return &mockSet{
 		course:   &mockCourseRepo{},
 		outline:  &mockOutlineRepo{},
+		history:  &mockHistoryRepo{},
 		doc:      &mockDocRepo{},
 		storage:  &mockStorage{},
 		cfgSvc:   &mockModelCfgSvc{resolve: func() (model.ProviderConfig, error) { return model.ProviderConfig{}, types.ErrNotFound }},
@@ -302,6 +341,7 @@ func TestCreateStoresCourseAndDocuments(t *testing.T) {
 	svc := NewCourseService(
 		&mockCourseRepo{create: func(c *types.Course) error { created = c; return nil }},
 		&mockOutlineRepo{},
+		&mockHistoryRepo{},
 		&mockDocRepo{create: func(d *types.Document) error { docCreated = d; return nil }},
 		passTM{},
 		&mockStorage{put: func(key string, _ io.Reader) (string, error) {
@@ -337,6 +377,7 @@ func TestCreateStoresOutlineCount(t *testing.T) {
 	svc := NewCourseService(
 		&mockCourseRepo{create: func(c *types.Course) error { created = c; return nil }},
 		&mockOutlineRepo{},
+		&mockHistoryRepo{},
 		&mockDocRepo{},
 		passTM{},
 		&mockStorage{},
@@ -359,7 +400,7 @@ func TestNormalizeOutlineCount(t *testing.T) {
 }
 
 func TestBuildOutlineMessagesIncludesCount(t *testing.T) {
-	msgs, err := buildOutlineMessages("学习数组", "", 12)
+	msgs, err := buildOutlineMessages("学习数组", "", 12, "", "")
 	require.NoError(t, err)
 	require.Len(t, msgs, 2)
 	require.Equal(t, model.RoleSystem, msgs[0].Role)
@@ -403,6 +444,7 @@ func TestGenerateOutlineParsesAndPersists(t *testing.T) {
 		&mockCourseRepo{getByID: func(_, _ types.ID) (*types.Course, error) { c := course; return &c, nil },
 			updateTt: func(_ types.ID, t string) error { updatedTitle = t; return nil }},
 		&mockOutlineRepo{create: func(o *types.Outline) error { persisted = *o; return nil }},
+		&mockHistoryRepo{},
 		&mockDocRepo{},
 		passTM{},
 		&mockStorage{},
@@ -412,7 +454,7 @@ func TestGenerateOutlineParsesAndPersists(t *testing.T) {
 		registry,
 	)
 
-	res, err := svc.GenerateOutline(context.Background(), uid, course.ID)
+	res, err := svc.(*CourseService).generateOutline(context.Background(), uid, course.ID, "")
 	require.NoError(t, err)
 	require.Equal(t, "数组课程", res.Title)
 	require.Len(t, res.Sections, 2)
@@ -437,6 +479,7 @@ func TestGenerateOutlineRejectsInvalidType(t *testing.T) {
 	svc := NewCourseService(
 		&mockCourseRepo{getByID: func(_, _ types.ID) (*types.Course, error) { c := course; return &c, nil }},
 		&mockOutlineRepo{},
+		&mockHistoryRepo{},
 		&mockDocRepo{},
 		passTM{},
 		&mockStorage{},
@@ -446,6 +489,6 @@ func TestGenerateOutlineRejectsInvalidType(t *testing.T) {
 		registry,
 	)
 
-	_, err := svc.GenerateOutline(context.Background(), uid, course.ID)
+	_, err := svc.(*CourseService).generateOutline(context.Background(), uid, course.ID, "")
 	require.ErrorIs(t, err, types.ErrOutlineFailed)
 }

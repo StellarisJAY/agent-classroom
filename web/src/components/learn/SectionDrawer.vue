@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { NButton, NDrawer, NDrawerContent, NIcon } from 'naive-ui'
+import { NButton, NDrawer, NDrawerContent, NIcon, NSpin } from 'naive-ui'
 import { ListOutline } from '@vicons/ionicons5'
 
 import type { SectionTypeValue } from '@/api/learn'
@@ -31,6 +31,7 @@ const entries = computed(() =>
     index: i,
     title: s.title,
     type: s.type,
+    status: s.status,
     label: typeLabel[s.type],
     hint: typeHint[s.type],
     active: i === store.currentIndex,
@@ -60,6 +61,9 @@ const entries = computed(() =>
             <span v-if="store.detail" class="section-drawer__sub">
               {{ store.detail.course.title }}
             </span>
+            <span v-if="!store.allGenerated" class="section-drawer__gen-count">
+              已生成 {{ store.generatedCount }} / {{ store.sections.length }} 节
+            </span>
           </div>
         </template>
 
@@ -76,7 +80,14 @@ const entries = computed(() =>
           >
             <span class="section-drawer__seq">{{ e.index + 1 }}</span>
             <span class="section-drawer__name">{{ e.title }}</span>
-            <span class="section-drawer__badge" :data-type="e.type">{{ e.label }}</span>
+            <span v-if="e.status === 'generating'" class="section-drawer__badge is-generating">
+              <n-spin :size="10" />
+              生成中
+            </span>
+            <span v-else-if="e.status === 'pending'" class="section-drawer__badge is-pending">
+              待生成
+            </span>
+            <span v-else class="section-drawer__badge" :data-type="e.type">{{ e.label }}</span>
           </button>
         </nav>
       </n-drawer-content>
@@ -98,6 +109,11 @@ const entries = computed(() =>
 .section-drawer__sub {
   font-size: 12px;
   color: var(--app-text-2, #64748b);
+}
+
+.section-drawer__gen-count {
+  font-size: 12px;
+  color: #0d9488;
 }
 
 .section-drawer__list {
@@ -167,11 +183,20 @@ const entries = computed(() =>
 
 .section-drawer__badge {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 0 6px;
   font-size: 11px;
   line-height: 1.5;
   border: 1px solid currentColor;
   border-radius: 999px;
+}
+.section-drawer__badge.is-generating {
+  color: #0d9488;
+}
+.section-drawer__badge.is-pending {
+  color: #94a3b8;
 }
 .section-drawer__badge[data-type='quiz'] {
   color: #b45309;
@@ -180,7 +205,9 @@ const entries = computed(() =>
   color: #0d9488;
 }
 .section-drawer__item.is-active .section-drawer__badge[data-type='quiz'],
-.section-drawer__item.is-active .section-drawer__badge[data-type^='demo_'] {
+.section-drawer__item.is-active .section-drawer__badge[data-type^='demo_'],
+.section-drawer__item.is-active .section-drawer__badge.is-generating,
+.section-drawer__item.is-active .section-drawer__badge.is-pending {
   color: #fff;
 }
 </style>

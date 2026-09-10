@@ -213,7 +213,7 @@ func TestConfirmOutlineMaterializesSections(t *testing.T) {
 	require.Len(t, progs, 2)
 }
 
-func TestStreamGenerationSerialCompletion(t *testing.T) {
+func TestEnsureGenerationSerialCompletion(t *testing.T) {
 	uid := types.NewID()
 	cid := types.NewID()
 	kpJSON, _ := json.Marshal([]string{"a"})
@@ -232,7 +232,12 @@ func TestStreamGenerationSerialCompletion(t *testing.T) {
 				c := sampleCourse(cid, uid, types.CourseStatusOutlineConfirmed, false)
 				return &c, nil
 			},
-			updateSt: func(_ types.ID, st string) error { completedStatus = st; return nil },
+			updateSt: func(_ types.ID, st string) error {
+				qMu.Lock()
+				completedStatus = st
+				qMu.Unlock()
+				return nil
+			},
 		},
 		&mockOutlineRepo{},
 		&mockSectionRepo{
@@ -257,31 +262,27 @@ func TestStreamGenerationSerialCompletion(t *testing.T) {
 		testRegistry(testSlideContentJSON, testSlideStepsJSON, testQuizQuestionsJSON),
 	)
 
-	var events []types.ProgressEvent
-	done := make(chan error, 1)
-	go func() {
-		err := svc.StreamGeneration(context.Background(), uid, cid, func(ev types.ProgressEvent) error {
-			events = append(events, ev)
-			return nil
-		})
-		done <- err
-	}()
+	// 后台异步运行；轮询等待两环节全部完成。
+	require.NoError(t, svc.EnsureGeneration(context.Background(), uid, cid))
 
-	require.NoError(t, <-done)
-	require.Equal(t, types.CourseStatusCompleted, completedStatus)
-	require.NotEmpty(t, events)
-	require.Equal(t, "snapshot", events[0].Type)
-
-	doneSec := 0
-	for _, ev := range events {
-		if ev.Type == "section" && ev.Section.Status == types.SectionStatusDone {
-			doneSec++
+	deadline := time.After(5 * time.Second)
+	for {
+		qMu.Lock()
+		finished := completedStatus == types.CourseStatusCompleted && len(replacedBy[sections[1].ID]) == 2
+		qMu.Unlock()
+		if finished {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("内容生成未在预期时间内完成")
+		case <-time.After(50 * time.Millisecond):
 		}
 	}
-	require.Equal(t, 2, doneSec, "两个环节都应串行完成")
 
 	qMu.Lock()
 	defer qMu.Unlock()
+	require.Equal(t, types.CourseStatusCompleted, completedStatus)
 	quizSec := sections[1]
 	require.Len(t, replacedBy[quizSec.ID], 2, "quiz 环节应把生成题目写入 questionRepo")
 }

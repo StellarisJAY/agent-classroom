@@ -25,6 +25,14 @@ var outlineUserPromptTpl string
 // outlineUserTpl 解析后的 user 提示词模板。template.Must 在启动期校验语法。
 var outlineUserTpl = template.Must(template.New("outline_user").Parse(outlineUserPromptTpl))
 
+// outlineRegenerateUserPromptTpl 大纲重新生成的 user 提示词模板源码（含已有大纲 + 修改意见）。
+//
+//go:embed prompts/outline_regenerate_user.md
+var outlineRegenerateUserPromptTpl string
+
+// outlineRegenerateUserTpl 解析后的重新生成 user 模板。
+var outlineRegenerateUserTpl = template.Must(template.New("outline_regenerate_user").Parse(outlineRegenerateUserPromptTpl))
+
 // ---- Slide 环节生成（两阶段） ----
 
 // slideSystemPrompt Slide 阶段一（视觉内容）的 system 提示词。

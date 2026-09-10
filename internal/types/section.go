@@ -53,7 +53,7 @@ type ConfirmOutlineReq struct {
 	Sections []OutlineSection `json:"sections" binding:"required,min=1,dive"`
 }
 
-// SectionProgress 单个环节的生成进度（供确认返回与 SSE 进度展示）。
+// SectionProgress 单个环节的生成进度（供确认返回与轮询进度展示）。
 type SectionProgress struct {
 	ID              ID       `json:"id"`
 	Position        int      `json:"position"`
@@ -61,17 +61,6 @@ type SectionProgress struct {
 	Title           string   `json:"title"`
 	Status          string   `json:"status"`
 	KnowledgePoints []string `json:"knowledge_points"`
-}
-
-// ProgressEvent 内容生成过程中的进度事件（经 SSE 推送）。
-// Type 取值：snapshot（全量进度，恢复用）| section（单环节状态变更）| course（课程终态）| error。
-type ProgressEvent struct {
-	Type     string            `json:"type"`
-	Sections []SectionProgress `json:"sections,omitempty"`
-	Index    int               `json:"index,omitempty"`
-	Section  SectionProgress   `json:"section,omitempty"`
-	Status   string            `json:"status,omitempty"`
-	Message  string            `json:"message,omitempty"`
 }
 
 // GenerationContext 传给环节内容生成器的上下文，支撑后续「连贯性」等需求。
@@ -126,11 +115,11 @@ type SectionContentGenerator interface {
 type SectionService interface {
 	// ConfirmOutline 确认大纲并物化环节，随后立即启动后台串行生成，返回物化后的环节进度。
 	ConfirmOutline(ctx context.Context, userID, courseID ID, req *ConfirmOutlineReq) ([]SectionProgress, error)
+	// EnsureGeneration 确保某课程的内容生成循环在运行（未运行则启动/续跑）。
+	// 用于中断后恢复；课程须已确认大纲或处于生成中。
+	EnsureGeneration(ctx context.Context, userID, courseID ID) error
 	// ListProgress 返回某课程全部环节当前进度。
 	ListProgress(ctx context.Context, userID, courseID ID) ([]SectionProgress, error)
-	// StreamGeneration 订阅某课程内容生成进度：先回放快照，再实时转发，直到完成/出错/上下文取消。
-	// emit 返回 error 时中止订阅。
-	StreamGeneration(ctx context.Context, userID, courseID ID, emit func(ProgressEvent) error) error
 	// GetLearnDetail 返回课程学习详情：课程摘要 + 有序环节（slide 含 content/steps 产物透传）。
 	// 仅课程 owner 可访问；进度本期固定 unstarted（学习进度上报另行实现）。
 	GetLearnDetail(ctx context.Context, userID, courseID ID) (*CourseLearnDetail, error)

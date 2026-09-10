@@ -60,10 +60,13 @@ func registerAPI(api *gin.RouterGroup, cfg *config.Config, auth *handler.AuthHan
 		courseGroup.GET("", course.List)
 		courseGroup.POST("", course.Create)
 		courseGroup.GET("/:id/outline", course.GetOutline)
-		courseGroup.GET("/:id/outline/generate", course.GenerateOutline)
+		courseGroup.POST("/:id/outline/regenerate", course.RegenerateOutline)
+		courseGroup.GET("/:id/outline/task", course.OutlineTask)
+		courseGroup.GET("/:id/outline/versions", course.ListOutlineVersions)
+		courseGroup.POST("/:id/outline/revert", course.RevertOutline)
 		courseGroup.POST("/:id/outline/confirm", section.Confirm)
 		courseGroup.GET("/:id/sections", section.List)
-		courseGroup.GET("/:id/generate", section.Generate)
+		courseGroup.POST("/:id/generate/resume", section.Generate)
 		courseGroup.GET("/:id/learn", section.Learn)
 	}
 }

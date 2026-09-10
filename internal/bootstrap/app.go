@@ -75,10 +75,11 @@ func NewApp(cfg *config.Config) (*App, error) {
 
 	courseRepo := repo.NewCourseRepo(db)
 	outlineRepo := repo.NewOutlineRepo(db)
+	outlineHistoryRepo := repo.NewOutlineHistoryRepo(db)
 	documentRepo := repo.NewDocumentRepo(db)
 	sectionRepo := repo.NewSectionRepo(db)
 	questionRepo := repo.NewQuestionRepo(db)
-	courseSvc := service.NewCourseService(courseRepo, outlineRepo, documentRepo, store, objStorage, modelConfigSvc, modelRegistry)
+	courseSvc := service.NewCourseService(courseRepo, outlineRepo, outlineHistoryRepo, documentRepo, store, objStorage, modelConfigSvc, modelRegistry)
 	courseHandler := handler.NewCourseHandler(courseSvc)
 	sectionSvc := service.NewSectionService(courseRepo, outlineRepo, sectionRepo, questionRepo, store, documentRepo, objStorage, modelConfigSvc, modelRegistry)
 	sectionHandler := handler.NewSectionHandler(sectionSvc)

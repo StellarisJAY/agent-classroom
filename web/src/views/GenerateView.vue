@@ -1,9 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NEmpty, NSpin, useMessage } from 'naive-ui'
+import {
+  NButton,
+  NEmpty,
+  NInput,
+  NModal,
+  NSpin,
+  useMessage,
+} from 'naive-ui'
 
-import type { OutlineSection } from '@/api/course'
+import type { OutlineSection, OutlineVersionView } from '@/api/course'
 import OutlineList from '@/components/generate/OutlineList.vue'
 import SectionProgressList from '@/components/generate/SectionProgressList.vue'
 import { useGenerationStore } from '@/stores/generation'
@@ -18,11 +25,12 @@ const courseId = computed(() => String(route.params.courseId))
 /** 大纲生成完成后的可编辑本地副本（调序/删除仅前端效果，确认时提交给后端）。 */
 const editable = ref<OutlineSection[]>([])
 
+// sections 每次都是整体替换赋值，按引用监听即可；回退场景 phase 不变、仅 sections 变化
 watch(
-  () => generationStore.phase,
-  (phase) => {
+  [() => generationStore.phase, () => generationStore.sections],
+  ([phase, secs]) => {
     if (phase === 'generated') {
-      editable.value = generationStore.sections.map((s) => ({
+      editable.value = secs.map((s) => ({
         ...s,
         knowledge_points: [...s.knowledge_points],
       }))
@@ -55,12 +63,74 @@ async function handleConfirm() {
 }
 
 function retry() {
-  generationStore.generate(courseId.value)
+  openRegen(false)
 }
 
-/** 内容生成失败后重连订阅（服务端会续跑剩余环节）。 */
+/** 重新生成弹窗：required=true 时修改意见必填（确认步骤），false 时选填（失败重试）。 */
+const regenModal = ref(false)
+const regenRequired = ref(false)
+const regenFeedback = ref('')
+const regenBusy = ref(false)
+
+function openRegen(required: boolean) {
+  regenRequired.value = required
+  regenFeedback.value = ''
+  regenModal.value = true
+}
+
+async function confirmRegen() {
+  if (regenRequired.value && !regenFeedback.value.trim()) {
+    message.warning('请输入修改意见')
+    return
+  }
+  regenBusy.value = true
+  regenModal.value = false
+  await generationStore.regenerate(courseId.value, regenFeedback.value.trim())
+  regenBusy.value = false
+}
+
+/** 历史版本弹窗 */
+const versionsModal = ref(false)
+const versions = ref<OutlineVersionView[]>([])
+const versionsLoading = ref(false)
+const reverting = ref(false)
+
+async function openVersions() {
+  versionsLoading.value = true
+  versionsModal.value = true
+  try {
+    versions.value = await generationStore.listVersions(courseId.value)
+  } catch {
+    versions.value = []
+    message.error('加载历史版本失败')
+  } finally {
+    versionsLoading.value = false
+  }
+}
+
+async function handleRevert(version: number) {
+  reverting.value = true
+  try {
+    await generationStore.revert(courseId.value, version)
+    versionsModal.value = false
+    message.success(`已回退到第 ${version} 版`)
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : '回退失败')
+  } finally {
+    reverting.value = false
+  }
+}
+
+function formatTime(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** 内容生成中断/失败后恢复后台续跑，并重新进入进度轮询。 */
 function retryContent() {
-  generationStore.resumeContentIfNeeded(courseId.value)
+  generationStore.resumeGeneration(courseId.value)
 }
 
 function goLearn() {
@@ -70,6 +140,10 @@ function goLearn() {
 onMounted(async () => {
   await generationStore.initOrGenerate(courseId.value)
   await generationStore.resumeContentIfNeeded(courseId.value)
+})
+
+onBeforeUnmount(() => {
+  generationStore.stopPolling()
 })
 </script>
 
@@ -144,8 +218,59 @@ onMounted(async () => {
         <n-button type="primary" size="large" :loading="confirming" :disabled="!editable.length" @click="handleConfirm">
           确认并开始生成
         </n-button>
+        <n-button size="large" @click="openRegen(true)">重新生成</n-button>
+        <n-button size="large" @click="openVersions">历史版本</n-button>
       </div>
     </div>
+
+    <!-- 重新生成弹窗 -->
+    <n-modal v-model:show="regenModal" preset="card" title="重新生成大纲" style="width: 440px">
+      <p class="generate-view__modal-hint">
+        输入修改意见，AI 将参考当前大纲与最初要求进行调整（意见为{{ regenRequired ? '必填' : '选填' }}，不填则重新生成）。
+      </p>
+      <n-input
+        v-model:value="regenFeedback"
+        type="textarea"
+        :rows="4"
+        placeholder="例如：增加一个实操环节，第 2 节标题更通俗…"
+        :disabled="regenBusy"
+      />
+      <template #footer>
+        <div class="generate-view__modal-actions">
+          <n-button @click="regenModal = false">取消</n-button>
+          <n-button type="primary" :loading="regenBusy" @click="confirmRegen">确认重新生成</n-button>
+        </div>
+      </template>
+    </n-modal>
+
+    <!-- 历史版本弹窗 -->
+    <n-modal v-model:show="versionsModal" preset="card" title="大纲历史版本" style="width: 520px">
+      <n-spin :show="versionsLoading">
+        <div v-if="!versionsLoading && versions.length" class="generate-view__versions">
+          <button
+            v-for="v in versions"
+            :key="v.version"
+            type="button"
+            class="generate-view__version"
+            :disabled="v.current || reverting"
+            @click="handleRevert(v.version)"
+          >
+            <div class="generate-view__version-line">
+              <span class="generate-view__version-tag">第 {{ v.version }} 版</span>
+              <span v-if="v.current" class="generate-view__version-current">当前</span>
+              <span class="generate-view__version-time">{{ formatTime(v.created_at) }}</span>
+            </div>
+            <div v-if="v.feedback" class="generate-view__version-feedback">{{ v.feedback }}</div>
+          </button>
+        </div>
+        <n-empty v-else-if="!versionsLoading" description="暂无历史版本" />
+      </n-spin>
+      <template #footer>
+        <div class="generate-view__modal-actions">
+          <n-button @click="versionsModal = false">关闭</n-button>
+        </div>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -200,6 +325,80 @@ onMounted(async () => {
   margin-top: 16px;
   display: flex;
   justify-content: center;
+  gap: 12px;
+}
+
+.generate-view__modal-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--app-text-2, #64748b);
+}
+
+.generate-view__modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.generate-view__versions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.generate-view__version {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--app-border, #e2e8f0);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.generate-view__version:hover:not(:disabled) {
+  border-color: var(--app-primary, #2563eb);
+}
+
+.generate-view__version:disabled {
+  cursor: default;
+  opacity: 0.9;
+}
+
+.generate-view__version-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.generate-view__version-tag {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-text-1, #0f172a);
+}
+
+.generate-view__version-current {
+  font-size: 12px;
+  color: var(--app-primary, #2563eb);
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 0 6px;
+}
+
+.generate-view__version-time {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--app-text-3, #94a3b8);
+}
+
+.generate-view__version-feedback {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--app-text-2, #64748b);
 }
 
 .generate-view__done-actions {

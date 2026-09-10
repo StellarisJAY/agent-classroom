@@ -34,88 +34,34 @@ func (g *stubGenerator) Generate(_ context.Context, section *types.Section, _ *t
 	return nil
 }
 
-// ---- 进程内进度 hub（简化实现：无分布式 worker，单进程内存广播） ----
+// ---- 进程内生成运行权（简化实现：单进程内单课程只跑一个串行循环） ----
 
-// eventBuffer 订阅者缓冲事件数；生成中事件较多，缓冲防阻塞。
-const eventBuffer = 16
-
-// courseFeed 单个课程的订阅与终态。
-type courseFeed struct {
+// sectionRuns 单课程内容生成循环的运行状态；无分布式 worker，仅防同一课程重复起循环。
+type sectionRuns struct {
 	mu      sync.Mutex
-	running bool
-	done    bool
-	subs    map[chan types.ProgressEvent]struct{}
+	running map[types.ID]bool
 }
 
-type progressHub struct {
-	mu    sync.Mutex
-	feeds map[types.ID]*courseFeed
+func newSectionRuns() *sectionRuns {
+	return &sectionRuns{running: make(map[types.ID]bool)}
 }
 
-func newProgressHub() *progressHub {
-	return &progressHub{feeds: make(map[types.ID]*courseFeed)}
-}
-
-func (h *progressHub) feed(courseID types.ID) *courseFeed {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	f, ok := h.feeds[courseID]
-	if !ok {
-		f = &courseFeed{subs: make(map[chan types.ProgressEvent]struct{})}
-		h.feeds[courseID] = f
-	}
-	return f
-}
-
-func (f *courseFeed) add() chan types.ProgressEvent {
-	ch := make(chan types.ProgressEvent, eventBuffer)
-	f.mu.Lock()
-	f.subs[ch] = struct{}{}
-	f.mu.Unlock()
-	return ch
-}
-
-func (f *courseFeed) remove(ch chan types.ProgressEvent) {
-	f.mu.Lock()
-	delete(f.subs, ch)
-	f.mu.Unlock()
-}
-
-// tryStart 返回是否成功抢占运行权（保证单进程内单课程只跑一个串行循环）。
-func (f *courseFeed) tryStart() bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.running {
+// tryStart 抢占某课程的运行权；已在运行返回 false。
+func (r *sectionRuns) tryStart(courseID types.ID) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.running[courseID] {
 		return false
 	}
-	f.running = true
+	r.running[courseID] = true
 	return true
 }
 
-func (f *courseFeed) isDone() bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.done
-}
-
-// broadcast 非阻塞广播给所有订阅者。
-func (f *courseFeed) broadcast(ev types.ProgressEvent) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for ch := range f.subs {
-		select {
-		case ch <- ev:
-		default:
-		}
-	}
-}
-
-// finish 标记运行结束；调用前须已广播终态事件。
-func (f *courseFeed) finish() {
-	f.mu.Lock()
-	f.running = false
-	f.done = true
-	f.mu.Unlock()
+// finish 释放运行权。
+func (r *sectionRuns) finish(courseID types.ID) {
+	r.mu.Lock()
+	delete(r.running, courseID)
+	r.mu.Unlock()
 }
 
 // ---- SectionService ----
@@ -132,7 +78,7 @@ type SectionService struct {
 	modelCfgSvc  types.ModelConfigService
 	registry     *model.Registry
 	generators   map[string]types.SectionContentGenerator
-	hub          *progressHub
+	runs         *sectionRuns
 }
 
 var _ types.SectionService = (*SectionService)(nil)
@@ -169,7 +115,7 @@ func NewSectionService(
 			types.SectionTypeDemoFunction: &stubGenerator{sectionType: types.SectionTypeDemoFunction},
 			types.SectionTypeDemoBasic:    &demoBasicGenerator{},
 		},
-		hub: newProgressHub(),
+		runs: newSectionRuns(),
 	}
 }
 
@@ -341,9 +287,11 @@ func (s *SectionService) loadQuestions(ctx context.Context, sectionID types.ID) 
 	return out, nil
 }
 
-// ---- SSE 进度订阅 ----
+// ---- 串行生成 ----
 
-func (s *SectionService) StreamGeneration(ctx context.Context, userID, courseID types.ID, emit func(types.ProgressEvent) error) error {
+// EnsureGeneration 确保某课程的内容生成循环在运行（未运行则启动/续跑）。
+// 用于进程重启或中断后的恢复。
+func (s *SectionService) EnsureGeneration(ctx context.Context, userID, courseID types.ID) error {
 	course, err := s.courseRepo.GetByID(ctx, userID, courseID)
 	if err != nil {
 		if errors.Is(err, types.ErrNotFound) {
@@ -352,93 +300,42 @@ func (s *SectionService) StreamGeneration(ctx context.Context, userID, courseID 
 		return err
 	}
 	switch course.Status {
-	case types.CourseStatusCompleted:
-		if secs, lerr := s.listProgress(ctx, courseID); lerr == nil {
-			if eerr := emit(types.ProgressEvent{Type: "snapshot", Sections: secs}); eerr != nil {
-				return nil
-			}
-		}
-		return nil
 	case types.CourseStatusGenerating, types.CourseStatusOutlineConfirmed:
 	default:
 		return types.ErrOutlineNotConfirmed
 	}
-
-	f := s.hub.feed(courseID)
-	ch := f.add()
-	defer f.remove(ch)
-
-	// 已结束（本地刚完成）：快照即含全部 done，直接返回终态。
-	if f.isDone() {
-		if secs, lerr := s.listProgress(ctx, courseID); lerr == nil {
-			_ = emit(types.ProgressEvent{Type: "snapshot", Sections: secs})
-		}
-		return nil
-	}
-
-	// 先订阅再启动/恢复循环，避免漏事件。
 	s.ensureLoop(userID, course)
-
-	// 快照：先让前端渲染当前全部进度，后续事件按 position 增量更新。
-	if secs, lerr := s.listProgress(ctx, courseID); lerr == nil {
-		if eerr := emit(types.ProgressEvent{Type: "snapshot", Sections: secs}); eerr != nil {
-			return nil
-		}
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case ev, ok := <-ch:
-			if !ok {
-				return nil
-			}
-			switch ev.Type {
-			case "error":
-				return types.NewError(types.CodeInternalError, ev.Message)
-			case "course":
-				// 终态；返回后由 handler 写 done
-				return nil
-			}
-			if err := emit(ev); err != nil {
-				return nil
-			}
-		}
-	}
+	return nil
 }
-
-// ---- 串行生成 ----
 
 // ensureLoop 保证单课程只跑一个生成循环；如未在跑则启动（含崩溃后恢复续跑）。
 func (s *SectionService) ensureLoop(userID types.ID, course *types.Course) {
-	f := s.hub.feed(course.ID)
-	if !f.tryStart() {
+	if !s.runs.tryStart(course.ID) {
 		return
 	}
-	go s.runGeneration(userID, course, f)
+	go s.runGeneration(userID, course)
 }
 
-// runGeneration 串行生成课程全部未完成环节。任何一处失败即中止并广播 error。
-func (s *SectionService) runGeneration(userID types.ID, course *types.Course, f *courseFeed) {
+// runGeneration 串行生成课程全部未完成环节。任何一处失败即中止：失败环节置回 pending，
+// 课程停留 generating；前端据此展示「重试继续生成」并经 EnsureGeneration 续跑。
+func (s *SectionService) runGeneration(userID types.ID, course *types.Course) {
 	ctx := context.Background()
-	defer f.finish()
+	defer s.runs.finish(course.ID)
 
 	genCtx, err := s.buildGenerationContext(ctx, userID, course)
 	if err != nil {
 		slog.Error("build generation context failed", "course_id", course.ID.String(), "error", err)
-		f.broadcast(types.ProgressEvent{Type: "error", Message: types.ErrContentGenerate.Msg})
 		return
 	}
 
 	if err := s.courseRepo.UpdateStatus(ctx, course.ID, types.CourseStatusGenerating); err != nil {
-		f.broadcast(types.ProgressEvent{Type: "error", Message: types.ErrContentGenerate.Msg})
+		slog.Error("update course status failed", "course_id", course.ID.String(), "error", err)
 		return
 	}
 
 	secs, err := s.sectionRepo.ListByCourse(ctx, course.ID)
 	if err != nil {
-		f.broadcast(types.ProgressEvent{Type: "error", Message: types.ErrContentGenerate.Msg})
+		slog.Error("list sections failed", "course_id", course.ID.String(), "error", err)
 		return
 	}
 
@@ -449,12 +346,9 @@ func (s *SectionService) runGeneration(userID types.ID, course *types.Course, f 
 			continue
 		}
 		if err := s.sectionRepo.UpdateStatus(ctx, sec.ID, types.SectionStatusGenerating); err != nil {
-			f.broadcast(types.ProgressEvent{Type: "error", Message: types.ErrContentGenerate.Msg})
+			slog.Error("update section status failed", "section_id", sec.ID.String(), "error", err)
 			return
 		}
-		sp := sectionToProgress(sec)
-		sp.Status = types.SectionStatusGenerating
-		f.broadcast(types.ProgressEvent{Type: "section", Index: i, Section: sp})
 
 		gen := s.generators[sec.Type]
 		if gen == nil {
@@ -463,27 +357,22 @@ func (s *SectionService) runGeneration(userID types.ID, course *types.Course, f 
 		if err := gen.Generate(ctx, sec, &genCtx); err != nil {
 			slog.Error("generate section failed", "section_id", sec.ID.String(), "error", err)
 			_ = s.sectionRepo.UpdateStatus(ctx, sec.ID, types.SectionStatusPending)
-			f.broadcast(types.ProgressEvent{Type: "error", Message: types.ErrContentGenerate.Msg})
 			return
 		}
 		if err := s.sectionRepo.UpdateContentSteps(ctx, sec.ID, sec.Content, sec.Steps); err != nil {
-			f.broadcast(types.ProgressEvent{Type: "error", Message: types.ErrContentGenerate.Msg})
+			slog.Error("persist section output failed", "section_id", sec.ID.String(), "error", err)
 			return
 		}
 		if err := s.sectionRepo.UpdateStatus(ctx, sec.ID, types.SectionStatusDone); err != nil {
-			f.broadcast(types.ProgressEvent{Type: "error", Message: types.ErrContentGenerate.Msg})
+			slog.Error("update section status failed", "section_id", sec.ID.String(), "error", err)
 			return
 		}
-		sp.Status = types.SectionStatusDone
-		f.broadcast(types.ProgressEvent{Type: "section", Index: i, Section: sp})
 		genCtx.Done = append(genCtx.Done, *sec)
 	}
 
 	if err := s.courseRepo.UpdateStatus(ctx, course.ID, types.CourseStatusCompleted); err != nil {
-		f.broadcast(types.ProgressEvent{Type: "error", Message: types.ErrContentGenerate.Msg})
-		return
+		slog.Error("update course status failed", "course_id", course.ID.String(), "error", err)
 	}
-	f.broadcast(types.ProgressEvent{Type: "course", Status: types.CourseStatusCompleted})
 }
 
 // buildGenerationContext 解析模型配置、构造客户端、加载文档与全量大纲，

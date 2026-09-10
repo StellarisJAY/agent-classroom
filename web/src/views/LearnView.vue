@@ -36,6 +36,7 @@ onBeforeUnmount(() => {
     store.markProgress('completed').catch(() => {})
   }
   chat.reset()
+  store.stopGenPolling()
 })
 
 watch(courseId, () => {
@@ -82,17 +83,38 @@ function retry() {
         class="learn-view__stage-inner"
         :data-type="store.currentSection.type"
       >
-        <StageSlide v-if="store.isSlide" />
-        <StageQuiz v-else-if="store.isQuiz" />
-        <StageDemo v-else-if="store.isDemo" />
+        <!-- 自动重试状态提示 -->
+        <p v-if="store.autoRetryCount > 0 && !store.stalled" class="learn-view__autoretry">
+          内容生成已中断，已自动重试 {{ store.autoRetryCount }} 次…
+        </p>
+
+        <!-- 生成中断：自动重试次数耗尽 → 手动重试横幅 -->
+        <div v-if="store.stalled" class="learn-view__stalled">
+          <p>内容生成已中断</p>
+          <n-button size="small" type="primary" @click="store.retryGeneration()">
+            重试继续生成
+          </n-button>
+        </div>
+
+        <!-- 该环节尚未生成完成 → 转圈等待 -->
+        <div v-if="store.pendingSection" class="learn-view__center">
+          <n-spin size="medium" />
+          <span class="learn-view__pending-hint">该环节正在生成中，请稍候…</span>
+        </div>
+
+        <template v-else-if="!store.stalled">
+          <StageSlide v-if="store.isSlide" />
+          <StageQuiz v-else-if="store.isQuiz" />
+          <StageDemo v-else-if="store.isDemo" />
+        </template>
       </div>
     </main>
 
     <!-- 统一工具栏：步骤切换/提交(中) + 大纲(右) -->
     <StageToolbar v-if="store.detail" />
 
-    <!-- 底部老师旁白 -->
-    <TeacherBar v-if="store.detail" />
+    <!-- 底部老师旁白（当前环节未生成完成时隐藏） -->
+    <TeacherBar v-if="store.detail && !store.pendingSection" />
 
     <!-- 问答抽屉 -->
     <ChatPanel />
@@ -168,5 +190,35 @@ function retry() {
 .learn-view__error {
   margin: 0;
   color: var(--app-text-2, #64748b);
+}
+
+.learn-view__pending-hint {
+  font-size: 14px;
+  color: var(--app-text-2, #64748b);
+}
+
+.learn-view__autoretry {
+  margin: 8px 16px 0;
+  font-size: 12px;
+  color: var(--app-text-3, #94a3b8);
+  text-align: center;
+}
+
+.learn-view__stalled {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 8px 16px;
+  padding: 10px 12px;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.learn-view__stalled p {
+  margin: 0;
+  font-size: 14px;
+  color: #b45309;
 }
 </style>
