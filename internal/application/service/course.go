@@ -577,6 +577,9 @@ func existingOutlineText(o *types.Outline) string {
 			b.WriteString(" — 知识点：" + strings.Join(s.KnowledgePoints, "；"))
 		}
 		b.WriteString("\n")
+		if strings.TrimSpace(s.Description) != "" {
+			b.WriteString("   描述：" + strings.TrimSpace(s.Description) + "\n")
+		}
 	}
 	return strings.TrimSuffix(b.String(), "\n")
 }
@@ -655,6 +658,7 @@ func normalizeSections(in []types.OutlineSection) []types.OutlineSection {
 			continue
 		}
 		s.Title = title
+		s.Description = strings.TrimSpace(s.Description)
 		s.KnowledgePoints = trimAll(s.KnowledgePoints)
 		out = append(out, s)
 	}

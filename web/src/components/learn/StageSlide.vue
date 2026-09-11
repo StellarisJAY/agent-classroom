@@ -9,6 +9,7 @@ import type {
   SlideFormulaElement,
   SlideImageElement,
   SlideListElement,
+  SlideMermaidElement,
   SlideShapeElement,
   SlideTextElement,
 } from '@/api/learn'
@@ -130,6 +131,88 @@ function isList(e: SlideElement): e is SlideListElement {
 function isImage(e: SlideElement): e is SlideImageElement {
   return e.type === 'image'
 }
+function isMermaid(e: SlideElement): e is SlideMermaidElement {
+  return e.type === 'mermaid'
+}
+
+// ---- mermaid 流程图渲染（动态导入，源码 → SVG 缓存） ----
+interface MermaidRendered {
+  svg: string
+  viewBox: { w: number; h: number } | null
+  bindFunctions?: (el: HTMLElement) => void
+}
+
+const mermaidOutputs = ref(new Map<string, MermaidRendered | null>())
+let mermaidSeq = 0
+
+async function renderMermaid(el: SlideMermaidElement) {
+  const key = `${el.id}@${el.content}`
+  if (mermaidOutputs.value.has(key)) return
+  mermaidOutputs.value.set(key, null)
+  try {
+    const mermaid = (await import('mermaid')).default
+    const { initialize } = mermaid
+    initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: 'base',
+      themeVariables: { fontFamily: 'inherit' },
+      flowchart: { useMaxWidth: false },
+    })
+    const { svg, bindFunctions } = await mermaid.render(`stage-mermaid-${++mermaidSeq}`, el.content)
+    mermaidOutputs.value.set(key, { svg, viewBox: parseSvgSize(svg), bindFunctions })
+    await nextTick(measureOverlays)
+  } catch {
+    mermaidOutputs.value.set(key, null)
+  }
+}
+
+/** 从 svg 字符串解析内在尺寸：优先 viewBox，回退 width/height 属性。 */
+function parseSvgSize(svg: string): { w: number; h: number } | null {
+  const vb = svg.match(/viewBox="[^"]*\s([\d.]+)\s([\d.]+)"/)
+  if (vb) {
+    const w = Number(vb[1])
+    const h = Number(vb[2])
+    if (w > 0 && h > 0) return { w, h }
+  }
+  const wm = svg.match(/width="([\d.]+)/)
+  const hm = svg.match(/height="([\d.]+)/)
+  if (wm && hm) {
+    const w = Number(wm[1])
+    const h = Number(hm[1])
+    if (w > 0 && h > 0) return { w, h }
+  }
+  return null
+}
+
+function mermaidOutputOf(el: SlideMermaidElement): MermaidRendered | null {
+  return mermaidOutputs.value.get(`${el.id}@${el.content}`) ?? null
+}
+
+/** mermaid 距画布底边的最小边距（画布坐标系 px） */
+const MERMAID_BOTTOM_MARGIN = 24
+
+/** 计算流程图显示尺寸（画布坐标系）：等比缩放到「不超 el.width、不超画布底边」，小幅图放大到宽度上限。 */
+function mermaidSize(el: SlideMermaidElement, c: SlideContent): { w: number; h?: number } {
+  const vb = mermaidOutputOf(el)?.viewBox
+  const availW = Math.max(el.width, 0)
+  const availH = c.height - el.y - MERMAID_BOTTOM_MARGIN
+  if (!vb || availW <= 0 || availH <= 0) return { w: availW }
+  const s = Math.min(availW / vb.w, availH / vb.h)
+  return { w: vb.w * s, h: vb.h * s }
+}
+
+function mermaidBox(el: SlideMermaidElement) {
+  const c = content.value
+  const size = c ? mermaidSize(el, c) : { w: el.width }
+  return {
+    left: px(el.x),
+    top: px(el.y),
+    width: px(size.w),
+    height: size.h ? px(size.h) : undefined,
+    fontSize: px(el.fontSize ?? 16),
+  }
+}
 
 // ---- 步骤动作叠加层（underline / highlight / box，多动作）----
 interface OverlayRect {
@@ -187,6 +270,18 @@ function measureOverlays() {
   }
   overlays.value = list
 }
+
+// 解析到 mermaid 元素后触发渲染。
+watch(
+  content,
+  (c) => {
+    if (!c) return
+    for (const el of c.elements) {
+      if (isMermaid(el)) void renderMermaid(el)
+    }
+  },
+  { deep: true },
+)
 
 watch([() => store.stepIndex, () => store.currentIndex], async () => {
   await nextTick()
@@ -255,6 +350,15 @@ watch([() => store.stepIndex, () => store.currentIndex], async () => {
             :src="el.src"
             :alt="el.prompt ?? ''"
           />
+
+          <div
+            v-else-if="isMermaid(el) && mermaidOutputOf(el)"
+            :ref="(n) => setRef(el.id, n)"
+            class="stage-el stage-el--mermaid"
+            :style="mermaidBox(el)"
+          >
+            <div class="stage-el--mermaid-svg" v-html="mermaidOutputOf(el)?.svg" />
+          </div>
         </template>
 
         <div
@@ -354,6 +458,23 @@ watch([() => store.stepIndex, () => store.currentIndex], async () => {
 .stage-el--image {
   object-fit: contain;
   border-radius: 4px;
+}
+
+.stage-el--mermaid {
+  display: flex;
+  align-items: center;
+}
+.stage-el--mermaid-svg {
+  width: 100%;
+}
+.stage-el--mermaid-svg :deep(svg) {
+  display: block;
+  margin: 0 auto;
+}
+.stage-el--mermaid-svg :deep(svg[viewBox]) {
+  width: 100%;
+  height: auto;
+  max-width: none;
 }
 .stage-el--list-ol,
 .stage-el--list-ul {

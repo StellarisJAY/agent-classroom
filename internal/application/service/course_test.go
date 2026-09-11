@@ -436,7 +436,7 @@ func TestGenerateOutlineParsesAndPersists(t *testing.T) {
 	registry := model.NewRegistry()
 	registry.RegisterLLM("test", func(model.ProviderConfig) model.LLMClient {
 		return &fakeLLM{content: `{"title":"数组课程","sections":[
-			{"title":"声明","type":"slide","knowledge_points":["语法"]},
+			{"title":"声明","type":"slide","knowledge_points":["语法"],"description":"先讲定义，再给类比"},
 			{"title":"访问","type":"quiz","knowledge_points":["索引"]}
 		]}`}
 	})
@@ -463,6 +463,7 @@ func TestGenerateOutlineParsesAndPersists(t *testing.T) {
 	require.Len(t, res.Sections, 2)
 	require.Equal(t, "声明", res.Sections[0].Title)
 	require.Equal(t, "数组课程", updatedTitle)
+	require.Equal(t, "先讲定义，再给类比", res.Sections[0].Description)
 
 	var content types.OutlineContent
 	require.NoError(t, json.Unmarshal(persisted.Content, &content))

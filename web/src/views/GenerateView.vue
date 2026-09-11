@@ -52,6 +52,12 @@ function reorderSection(from: number, to: number) {
   list.splice(to, 0, item!)
 }
 
+/** 内联编辑环节内容描述（随确认提交，作为内容生成的固化要求）。 */
+function updateDescription(idx: number, content: string) {
+  const target = editable.value[idx]
+  if (target) target.description = content
+}
+
 async function handleConfirm() {
   if (!editable.value.length) {
     message.warning('大纲为空，无法生成课程内容')
@@ -211,7 +217,12 @@ onBeforeUnmount(() => {
       <p class="generate-view__confirm-hint">
         拖拽可调整环节顺序、删除不需要的环节，确认后按顺序生成课程内容。
       </p>
-      <OutlineList v-if="editable.length" :sections="editable" @move="reorderSection" />
+      <OutlineList
+        v-if="editable.length"
+        :sections="editable"
+        @move="reorderSection"
+        @update-description="updateDescription"
+      />
       <n-empty v-else description="大纲为空" />
 
       <div class="generate-view__confirm-actions">

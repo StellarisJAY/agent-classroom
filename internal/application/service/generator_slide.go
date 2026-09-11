@@ -321,7 +321,11 @@ func sanitizeSlideElements(in []types.SlideElement) []types.SlideElement {
 			continue
 		}
 		switch el.Type {
-		case types.SlideElementText, types.SlideElementFormula, types.SlideElementShape, types.SlideElementList:
+		case types.SlideElementText, types.SlideElementFormula, types.SlideElementShape, types.SlideElementList, types.SlideElementMermaid:
+			// mermaid 元素复用 Content 存流程图源码，为空则无法渲染。
+			if el.Type == types.SlideElementMermaid && strings.TrimSpace(el.Content) == "" {
+				continue
+			}
 		case types.SlideElementImage:
 			// 图片元素需有生成提示词；尺寸缺省时给默认值，保证前端可渲染、生成有宽高比。
 			if strings.TrimSpace(el.Prompt) == "" && el.Src == "" {
@@ -441,6 +445,11 @@ func slideElementSummary(c *types.SlideContent) string {
 			if len(el.Items) > 0 {
 				b.WriteString(" 条目: ")
 				b.WriteString(summarizeText(strings.Join(el.Items, " / "), 100))
+			}
+		case types.SlideElementMermaid:
+			if el.Content != "" {
+				b.WriteString(" 流程图源码: ")
+				b.WriteString(summarizeText(el.Content, 120))
 			}
 		case types.SlideElementImage:
 			if el.Prompt != "" {

@@ -137,6 +137,8 @@ func genImageCtx(img model.ImageClient, llm model.LLMClient) *types.GenerationCo
 }
 
 const testSlideContentWithImageJSON = `{"width":1280,"height":720,"background":"#ffffff","accent":"#14b8a6","elements":[{"id":"e1","type":"text","content":"内存布局"},{"id":"e2","type":"image","x":700,"y":160,"width":480,"height":360,"prompt":"A labeled diagram of an array in memory"}]}`
+const testSlideContentWithMermaidJSON = `{"width":1280,"height":720,"background":"#ffffff","accent":"#14b8a6","elements":[{"id":"e1","type":"mermaid","x":80,"y":160,"width":560,"content":"flowchart TD\n    A[开始] --> B{判断}\n    B -->|是| C[结束]"}]}`
+const testSlideMermaidStepsJSON = `[{"text":"跟着流程图走一遍。","actions":[{"type":"box","targetElementId":"e1"}]}]`
 const testSlideStepsSimpleJSON = `[{"text":"讲解一下。","actions":[{"type":"box","targetElementId":"e2"}]}]`
 
 // 有图片客户端时，image 元素生成并回填 src，其余元素不受影响。
@@ -197,4 +199,38 @@ func TestSlideSanitizeRejectsImageWithoutPrompt(t *testing.T) {
 	}}
 	require.NoError(t, validateSlideContent(c))
 	require.Len(t, c.Elements, 1)
+}
+
+// mermaid 元素合法时保留；源码为空时被剔除。
+func TestSlideSanitizeMermaidElement(t *testing.T) {
+	c := &types.SlideContent{Elements: []types.SlideElement{
+		{ID: "e1", Type: types.SlideElementText, Content: "流程"},
+		{ID: "e2", Type: types.SlideElementMermaid, X: 80, Y: 200, Width: 560,
+			Content: "flowchart TD\n    A[开始] --> B[结束]"},
+		{ID: "e3", Type: types.SlideElementMermaid, X: 80, Y: 400, Width: 560},
+	}}
+	require.NoError(t, validateSlideContent(c))
+	require.Len(t, c.Elements, 2)
+	require.Equal(t, "e1", c.Elements[0].ID)
+	require.Equal(t, "e2", c.Elements[1].ID)
+}
+
+// 两阶段生成完整透传 mermaid 元素，讲解动作可引用其 id。
+func TestSlideGenerateKeepsMermaidElement(t *testing.T) {
+	g := &slideGenerator{}
+	sec := genSection("排序流程", nil)
+	client := &seqLLM{contents: []string{testSlideContentWithMermaidJSON, testSlideMermaidStepsJSON}}
+	err := g.Generate(context.Background(), sec, genCtxWithLLM(client))
+	require.NoError(t, err)
+
+	var content types.SlideContent
+	require.NoError(t, json.Unmarshal(sec.Content, &content))
+	require.Len(t, content.Elements, 1)
+	require.Equal(t, types.SlideElementMermaid, content.Elements[0].Type)
+	require.Contains(t, content.Elements[0].Content, "flowchart TD")
+
+	var steps []types.SlideStep
+	require.NoError(t, json.Unmarshal(sec.Steps, &steps))
+	require.Len(t, steps, 1)
+	require.Equal(t, "e1", steps[0].Actions[0].TargetElementID)
 }

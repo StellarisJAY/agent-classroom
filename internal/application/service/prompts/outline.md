@@ -44,6 +44,15 @@
 - 每个环节只聚焦一个单一主题，环节标题精炼、聚焦，避免宽泛。
 - 相邻环节之间应有清晰的递进关系，避免内容重复或割裂。
 
+### 环节内容描述（description）
+
+`description` 是该环节将生成内容的**详细说明**，是后续内容生成阶段的固化执行要求，必须具体、可执行：
+
+- `slide`：说明本页将呈现的具体内容与组织顺序（先讲什么、后讲什么），必要的示例或推导，以及画面上应出现的关键要素（文本/列表/公式/流程图/配图等）。
+- `quiz`：说明题型（单选/多选）与题量偏好、考察角度与难度侧重（例如“3 道单选，重点考察初始化语法与越界行为”）。
+- `demo_3d` / `demo_function` / `demo_basic`：说明要演示的对象、可交互操作与期望画面效果（例如“拖动滑块改变振幅与相位，实时绘制正弦曲线”）。
+- 描述须与标题、知识点一致且互相补充，不要与标题重复泛泛而谈。
+
 ## 输出格式
 
 ### JSON 结构
@@ -54,7 +63,7 @@
 {
   "title": "课程标题",
   "sections": [
-    { "title": "环节标题", "type": "slide", "knowledge_points": ["知识点 1", "知识点 2"] }
+    { "title": "环节标题", "type": "slide", "knowledge_points": ["知识点 1", "知识点 2"], "description": "本环节内容的详细描述" }
   ]
 }
 ```
@@ -68,6 +77,7 @@
 | `sections[].title` | 环节标题 | 精炼、聚焦单一主题 | 否 |
 | `sections[].type` | 环节形式 | 仅允许 `slide` / `quiz` / `demo_3d` / `demo_function` / `demo_basic` | 否 |
 | `sections[].knowledge_points` | 该环节要讲清的知识点 | 每环节 2~6 条短语 | 否 |
+| `sections[].description` | 该环节内容的详细描述（后续内容生成的执行要求） | 2~5 句，具体可执行，按「环节内容描述」一节的类型要求撰写 | 否 |
 
 ### 示例
 
@@ -77,12 +87,12 @@
 {
   "title": "一维数组入门",
   "sections": [
-    { "title": "什么是数组", "type": "slide", "knowledge_points": ["数组定义", "同类型元素", "连续存储"] },
-    { "title": "数组的声明与初始化", "type": "slide", "knowledge_points": ["声明语法", "初始化方式", "默认值"] },
-    { "title": "数组元素的可视化", "type": "demo_basic", "knowledge_points": ["内存布局", "索引访问", "越界"] },
-    { "title": "正弦函数图像", "type": "demo_function", "knowledge_points": ["周期", "振幅", "相位"] },
-    { "title": "遍历与访问", "type": "slide", "knowledge_points": ["下标访问", "for 遍历", "常见误区"] },
-    { "title": "阶段小测", "type": "quiz", "knowledge_points": ["声明", "初始化", "遍历"] }
+    { "title": "什么是数组", "type": "slide", "knowledge_points": ["数组定义", "同类型元素", "连续存储"], "description": "先给出生活中的『一排格子』类比引出数组定义，说明数组是同类型元素的连续有序集合；画面包含定义大字、类比示意与要点列表。" },
+    { "title": "数组的声明与初始化", "type": "slide", "knowledge_points": ["声明语法", "初始化方式", "默认值"], "description": "逐步展示声明语法代码块，随后示例字面量初始化与循环赋值；总结各语言默认值差异，画面以代码块和对比列表为主。" },
+    { "title": "数组元素的可视化", "type": "demo_basic", "knowledge_points": ["内存布局", "索引访问", "越界"], "description": "展示一排可点击的格子表示数组内存布局；点击格子高亮对应下标并显示 arr[i] 值，尝试越界访问时给出警示动画。" },
+    { "title": "正弦函数图像", "type": "demo_function", "knowledge_points": ["周期", "振幅", "相位"], "description": "绘制 y=A·sin(ωx+φ) 曲线，提供 A、ω、φ 滑块实时联动图像变化，标注周期与相位偏移。" },
+    { "title": "遍历与访问", "type": "slide", "knowledge_points": ["下标访问", "for 遍历", "常见误区"], "description": "给出 for 循环遍历数组的代码与逐行讲解，用动画演示索引推进过程；最后列出越界、漏判空数组等常见误区。" },
+    { "title": "阶段小测", "type": "quiz", "knowledge_points": ["声明", "初始化", "遍历"], "description": "3 道单选：考察初始化语法、默认值和遍历边界条件，题干简短、选项具体，覆盖易懂易错点。" }
   ]
 }
 ```

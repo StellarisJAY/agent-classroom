@@ -12,6 +12,8 @@ const (
 	SlideElementShape   = "shape"
 	SlideElementList    = "list"
 	SlideElementImage   = "image"
+
+	SlideElementMermaid = "mermaid"
 )
 
 // Slide 动作类型。
@@ -49,7 +51,7 @@ type SlideElement struct {
 	// Height 仅供 shape 使用。
 	Height int `json:"height,omitempty"`
 
-	// text 专用
+	// text / mermaid 共用：text 为纯文本；mermaid 为流程图源码
 	Content string          `json:"content,omitempty"`
 	Style   *SlideTextStyle `json:"style,omitempty"`
 

@@ -191,7 +191,7 @@ func TestConfirmOutlineMaterializesSections(t *testing.T) {
 
 	progs, err := svc.ConfirmOutline(context.Background(), uid, cid, &types.ConfirmOutlineReq{
 		Sections: []types.OutlineSection{
-			{Title: "声明", Type: types.SectionTypeSlide, KnowledgePoints: []string{"语法"}},
+			{Title: "声明", Type: types.SectionTypeSlide, KnowledgePoints: []string{"语法"}, Description: "先讲定义，再给类比"},
 			{Title: "访问", Type: types.SectionTypeQuiz, KnowledgePoints: []string{"索引"}},
 		},
 	})
@@ -206,6 +206,8 @@ func TestConfirmOutlineMaterializesSections(t *testing.T) {
 	require.Equal(t, types.SectionStatusPending, created[0].Status)
 	require.Equal(t, types.SectionTypeSlide, created[0].Type)
 	require.Equal(t, "声明", created[0].Title)
+	require.Equal(t, "先讲定义，再给类比", *created[0].Prompt, "大纲描述应物化为环节内容要求")
+	require.Nil(t, created[1].Prompt, "无描述的环节不应设置内容要求")
 	require.Equal(t, &uid, created[0].CreateBy)
 	var kp []string
 	require.NoError(t, json.Unmarshal(created[0].KnowledgePoints, &kp))

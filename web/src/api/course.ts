@@ -75,6 +75,8 @@ export interface OutlineSection {
   title: string
   type: SectionTypeValue
   knowledge_points: string[]
+  /** 大纲阶段确认/编辑的环节内容描述，确认后作为内容生成的固化要求 */
+  description: string
 }
 
 /** 环节生成状态：pending | generating | done */

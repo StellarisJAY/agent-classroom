@@ -25,7 +25,11 @@ export const SectionType = {
 export type SectionTypeValue = (typeof SectionType)[keyof typeof SectionType]
 
 /** 三种 demo 环节类型（聚合判断用） */
-export const DemoSectionTypes = [SectionType.Demo3D, SectionType.DemoFunction, SectionType.DemoBasic] as const
+export const DemoSectionTypes = [
+  SectionType.Demo3D,
+  SectionType.DemoFunction,
+  SectionType.DemoBasic,
+] as const
 
 export function isDemoType(type: string): boolean {
   return (DemoSectionTypes as readonly string[]).includes(type)
@@ -101,12 +105,26 @@ export interface SlideImageElement {
   prompt?: string
 }
 
+export interface SlideMermaidElement {
+  id: string
+  type: 'mermaid'
+  x: number
+  y: number
+  /** 流程图显示宽度 px，高度按内容自适应 */
+  width: number
+  /** mermaid 流程图源码（换行以 \n 转义） */
+  content: string
+  /** 图内文字字号 px，默认 16 */
+  fontSize?: number
+}
+
 export type SlideElement =
   | SlideTextElement
   | SlideFormulaElement
   | SlideShapeElement
   | SlideListElement
   | SlideImageElement
+  | SlideMermaidElement
 
 export interface SlideContent {
   width: number
@@ -221,7 +239,11 @@ export async function getCourseDetail(courseId: string): Promise<CourseLearnDeta
   })
   detail.sections = detail.sections.map((s) => {
     // demo_basic 环节已生成完成时兜底注入可运行示例；生成中环节保持 null 以显示转圈。
-    if (s.type === SectionType.DemoBasic && s.status === SectionStatus.Done && !isDemoContent(s.content)) {
+    if (
+      s.type === SectionType.DemoBasic &&
+      s.status === SectionStatus.Done &&
+      !isDemoContent(s.content)
+    ) {
       return { ...s, content: { ...mock.DEMO_CONTENT } }
     }
     return s

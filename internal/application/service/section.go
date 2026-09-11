@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -156,7 +157,7 @@ func (s *SectionService) ConfirmOutline(ctx context.Context, userID, courseID ty
 	rows := make([]types.Section, 0, len(sections))
 	for i, os := range sections {
 		kp, _ := json.Marshal(os.KnowledgePoints)
-		rows = append(rows, types.Section{
+		row := types.Section{
 			CourseID:        courseID,
 			Position:        i + 1,
 			Type:            os.Type,
@@ -167,7 +168,12 @@ func (s *SectionService) ConfirmOutline(ctx context.Context, userID, courseID ty
 			UpdateBy:        &by,
 			CreateAt:        now,
 			UpdateAt:        now,
-		})
+		}
+		// 大纲阶段确认的环节内容描述 → 内容生成的固化要求（生成器 user 模板的描述段）。
+		if desc := strings.TrimSpace(os.Description); desc != "" {
+			row.Prompt = &desc
+		}
+		rows = append(rows, row)
 	}
 
 	// 同一事务：覆盖大纲（终态有序列表 + confirmed）+ 课程状态 + 物化环节。

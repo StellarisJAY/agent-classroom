@@ -64,11 +64,14 @@ func (OutlineHistory) TableName() string { return "outline_history" }
 
 // ---- 结构 ----
 
-// OutlineSection 单个大纲环节（环节标题 + 形式 + 知识点）。
+// OutlineSection 单个大纲环节（环节标题 + 形式 + 知识点 + 内容描述）。
 type OutlineSection struct {
 	Title           string   `json:"title"`
 	Type            string   `json:"type"` // slide | quiz | demo_3d | demo_function | demo_basic
 	KnowledgePoints []string `json:"knowledge_points"`
+	// Description 大纲阶段对该环节将生成内容的详细描述（slide：讲解内容/组织/示例；
+	// quiz：题型与题量、考察方式；demo：演示/交互目标）。确认大纲后作为内容生成的固化要求。
+	Description string `json:"description,omitempty"`
 }
 
 // OutlineContent 大纲 content 的 jsonb 结构（{"sections":[…] }）。
