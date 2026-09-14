@@ -183,15 +183,26 @@ var (
 	ErrPromptRequired = NewError(CodeBadRequest, "请输入课程内容要求")
 	// ErrNoModelConfig 无可用模型配置（未设默认且服务端兜底缺失）
 	ErrNoModelConfig = NewError(CodeBadRequest, "未配置可用模型，请先在设置中添加模型配置")
-	// ErrUnsupportedFile 参考文档格式不支持（早期仅 txt/md）
-	ErrUnsupportedFile = NewError(CodeBadRequest, "参考文档仅支持 txt/md 格式")
+	// ErrUnsupportedFile 参考文档格式不支持（txt/md/pdf/docx）
+	ErrUnsupportedFile = NewError(CodeBadRequest, "参考文档仅支持 markdown/pdf/word 格式")
 	// ErrFileTooLarge 文档超过大小上限
 	ErrFileTooLarge = NewError(CodeBadRequest, "单个参考文档不能超过 10MB")
 	// ErrOutlineFailed 大纲生成失败（上游/解析错误）
 	ErrOutlineFailed = NewError(CodeInternalError, "大纲生成失败，请重试")
+	// ErrDocExtracting 有参考文档仍在提取中（超时未完成）
+	ErrDocExtracting = NewError(CodeConflict, "参考文档解析尚未完成，请稍后重试")
+	// ErrDocExtractFailed 参考文档全部提取失败（无法得到任何文本）
+	ErrDocExtractFailed = NewError(CodeInternalError, "参考文档内容提取失败，请更换文件或重试")
 )
 
 // ---- 接口 ----
+
+// DocumentStatusView 参考文档提取状态视图。
+type DocumentStatusView struct {
+	ID              ID     `json:"id"`
+	Filename        string `json:"filename"`
+	ExtractedStatus string `json:"extractedStatus"` // pending | success | failed
+}
 
 // CourseRepo 课程数据访问接口。
 type CourseRepo interface {
@@ -212,7 +223,9 @@ type CourseRepo interface {
 type CourseService interface {
 	// List 分页返回当前用户课程列表；req 为 nil 或缺省字段时取默认（all / 第 1 页 / 每页 20）。
 	List(ctx context.Context, userID ID, req *CourseListReq) (*CourseListResp, error)
-	// Create 创建草稿课程并保存参考文档元数据（提取的文本不入库）。
+	// ListDocuments 返回课程全部参考文档的提取状态。
+	ListDocuments(ctx context.Context, userID, courseID ID) ([]DocumentStatusView, error)
+	// Create 创建草稿课程并保存参考文档元数据（提取结果异步落库缓存）。
 	Create(ctx context.Context, userID ID, req *CreateCourseReq) (*CourseCreateResp, error)
 	// StartOutline 启动大纲生成任务（后台异步执行）：校验归属与 draft 状态后触发，
 	// 立即返回；进行中重复触发返回 ErrOutlineGenerating。

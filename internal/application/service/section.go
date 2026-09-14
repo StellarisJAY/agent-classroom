@@ -78,6 +78,7 @@ type SectionService struct {
 	storage      types.Storage
 	modelCfgSvc  types.ModelConfigService
 	registry     *model.Registry
+	docs         *docLoader
 	generators   map[string]types.SectionContentGenerator
 	runs         *sectionRuns
 }
@@ -95,6 +96,7 @@ func NewSectionService(
 	storage types.Storage,
 	modelCfgSvc types.ModelConfigService,
 	registry *model.Registry,
+	docs *docLoader,
 ) types.SectionService {
 	return &SectionService{
 		courseRepo:   courseRepo,
@@ -106,6 +108,7 @@ func NewSectionService(
 		storage:      storage,
 		modelCfgSvc:  modelCfgSvc,
 		registry:     registry,
+		docs:         docs,
 		generators: map[string]types.SectionContentGenerator{
 			types.SectionTypeSlide: &slideGenerator{},
 			types.SectionTypeQuiz:  &quizGenerator{questionRepo: questionRepo},
@@ -421,7 +424,7 @@ func (s *SectionService) buildGenerationContext(ctx context.Context, userID type
 	if err != nil {
 		return types.GenerationContext{}, err
 	}
-	docsText, err := loadDocumentsText(ctx, s.docRepo, s.storage, course.ID)
+	docsText, err := s.docs.LoadDocsText(ctx, course.ID)
 	if err != nil {
 		return types.GenerationContext{}, err
 	}

@@ -39,3 +39,9 @@ func (r *documentRepo) ListByCourse(ctx context.Context, courseID types.ID) ([]t
 	}
 	return list, nil
 }
+
+func (r *documentRepo) UpdateExtracted(ctx context.Context, id types.ID, status, text string) error {
+	return r.db(ctx).Model(&types.Document{}).
+		Where("id = ?", id).
+		Updates(map[string]any{"extracted_status": status, "extracted_text": text}).Error
+}

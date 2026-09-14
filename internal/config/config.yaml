@@ -46,6 +46,22 @@ model:
   # 流式请求（问答）超时；0 表示不限制，由上层 context 控制
   stream_timeout: 0s
 
+extractor:
+  # 提取链路：local 仅本地提取 | mineru 强制走 minerU | chain minerU 优先、本地兜底
+  provider: chain
+  # 注入提示词的参考文档 token 总预算（按 chars_per_token 换算成字符上限）
+  max_doc_tokens: 20000
+  # token≈字符 换算系数，中文约 1.5
+  chars_per_token: 1.5
+  # StartOutline 前置同步等待文档提取的超时
+  extract_timeout: 5m
+  mineru:
+    # 部署形态：official 官方 API | selfhosted 自托管端点
+    mode: official
+    base_url: ""
+    admin_token: ""
+    timeout: 300s
+
 storage:
   # 存储后端：local（本地磁盘）| minio
   type: local

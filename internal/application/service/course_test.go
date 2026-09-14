@@ -11,6 +11,7 @@ import (
 	"gorm.io/datatypes"
 
 	"github.com/StellarisJAY/agent-classroom/internal/model"
+	"github.com/StellarisJAY/agent-classroom/internal/model/extractor"
 	"github.com/StellarisJAY/agent-classroom/internal/types"
 )
 
@@ -127,8 +128,9 @@ func (m *mockHistoryRepo) Prune(_ context.Context, outlineID types.ID, keep int)
 }
 
 type mockDocRepo struct {
-	create func(*types.Document) error
-	listBy func(types.ID) ([]types.Document, error)
+	create          func(*types.Document) error
+	listBy          func(types.ID) ([]types.Document, error)
+	updateExtracted func() error
 }
 
 var _ types.DocumentRepo = (*mockDocRepo)(nil)
@@ -144,6 +146,12 @@ func (m *mockDocRepo) ListByCourse(_ context.Context, courseID types.ID) ([]type
 		return m.listBy(courseID)
 	}
 	return nil, nil
+}
+func (m *mockDocRepo) UpdateExtracted(_ context.Context, _ types.ID, _, _ string) error {
+	if m.updateExtracted != nil {
+		return m.updateExtracted()
+	}
+	return nil
 }
 
 type mockStorage struct {
@@ -205,7 +213,12 @@ func (m *mockModelCfgSvc) SetDefault(context.Context, types.ID, types.ID) error 
 func newCourseSvc(repo types.CourseRepo) types.CourseService {
 	set := defaultMockSet()
 	set.course = repo
-	return NewCourseService(set.course, set.outline, set.history, set.doc, passTM{}, set.storage, set.cfgSvc, set.registry)
+	return NewCourseService(set.course, set.outline, set.history, set.doc, passTM{}, set.storage, set.cfgSvc, set.registry, newTestDocs(set.doc, set.storage))
+}
+
+// newTestDocs 测试用文档加载器（本地提取链 + 固定预算）。
+func newTestDocs(doc types.DocumentRepo, storage types.Storage) *docLoader {
+	return NewDocLoader(doc, storage, extractor.NewChain(extractor.NewLocal(), nil), DocBudget{MaxTokens: 24000}, time.Second)
 }
 
 // mockSet 汇总本测试所需各 repo mock。
@@ -330,7 +343,7 @@ func TestCreateRejectsUnsupportedFile(t *testing.T) {
 	svc := newCourseSvc(&mockCourseRepo{})
 	_, err := svc.Create(context.Background(), uid, &types.CreateCourseReq{
 		Prompt: "学习数组",
-		Files:  []types.UploadedFile{{Name: "notes.pdf", Data: []byte("%PDF")}},
+		Files:  []types.UploadedFile{{Name: "notes.exe", Data: []byte("garbage")}},
 	})
 	require.ErrorIs(t, err, types.ErrUnsupportedFile)
 }
@@ -353,6 +366,7 @@ func TestCreateStoresCourseAndDocuments(t *testing.T) {
 		}},
 		defaultMockSet().cfgSvc,
 		model.NewRegistry(),
+		newTestDocsMock(),
 	)
 
 	resp, err := svc.Create(context.Background(), uid, &types.CreateCourseReq{
@@ -386,6 +400,7 @@ func TestCreateStoresOutlineCount(t *testing.T) {
 		&mockStorage{},
 		defaultMockSet().cfgSvc,
 		model.NewRegistry(),
+		newTestDocsMock(),
 	)
 	_, err := svc.Create(context.Background(), uid, &types.CreateCourseReq{
 		Prompt:       "学习数组",
@@ -455,6 +470,7 @@ func TestGenerateOutlineParsesAndPersists(t *testing.T) {
 			return model.ProviderConfig{Provider: "test", Model: "m", APIKey: "k"}, nil
 		}},
 		registry,
+		newTestDocsMock(),
 	)
 
 	res, err := svc.(*CourseService).generateOutline(context.Background(), uid, course.ID, "")
@@ -491,8 +507,15 @@ func TestGenerateOutlineRejectsInvalidType(t *testing.T) {
 			return model.ProviderConfig{Provider: "test", Model: "m", APIKey: "k"}, nil
 		}},
 		registry,
+		newTestDocsMock(),
 	)
 
 	_, err := svc.(*CourseService).generateOutline(context.Background(), uid, course.ID, "")
 	require.ErrorIs(t, err, types.ErrOutlineFailed)
+}
+
+// newTestDocsMock 测试用默认文档加载器。
+func newTestDocsMock() *docLoader {
+	s := defaultMockSet()
+	return newTestDocs(s.doc, s.storage)
 }

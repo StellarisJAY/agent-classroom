@@ -144,12 +144,14 @@ func migrateCourseSchema(db *gorm.DB) error {
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uniq_outline_history_version ON outline_history (outline_id, version)`,
 		`CREATE TABLE IF NOT EXISTS document (
-			id        uuid PRIMARY KEY,
-			course_id uuid NOT NULL REFERENCES course(id) ON DELETE CASCADE,
-			filename  text NOT NULL,
-			url       text NOT NULL,
-			create_by uuid REFERENCES users(id) ON DELETE SET NULL,
-			create_at timestamptz NOT NULL DEFAULT now()
+			id              uuid PRIMARY KEY,
+			course_id       uuid NOT NULL REFERENCES course(id) ON DELETE CASCADE,
+			filename        text NOT NULL,
+			url             text NOT NULL,
+			extracted_status varchar(16) NOT NULL DEFAULT 'pending',
+			extracted_text  text,
+			create_by       uuid REFERENCES users(id) ON DELETE SET NULL,
+			create_at       timestamptz NOT NULL DEFAULT now()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_document_course ON document (course_id)`,
 	}
@@ -197,6 +199,13 @@ func migrateCourseSchema(db *gorm.DB) error {
 	// 兼容已存在的旧库：outline 补 version 列。
 	if err := db.Exec(`ALTER TABLE outline ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1`).Error; err != nil {
 		return fmt.Errorf("migrate outline add version: %w", err)
+	}
+	// 参考文档提取结果缓存：status 幂等提取 + text 复用（旧库补列）。
+	if err := db.Exec(`ALTER TABLE document ADD COLUMN IF NOT EXISTS extracted_status varchar(16) NOT NULL DEFAULT 'pending'`).Error; err != nil {
+		return fmt.Errorf("migrate document add extracted_status: %w", err)
+	}
+	if err := db.Exec(`ALTER TABLE document ADD COLUMN IF NOT EXISTS extracted_text text`).Error; err != nil {
+		return fmt.Errorf("migrate document add extracted_text: %w", err)
 	}
 	return nil
 }

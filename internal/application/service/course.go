@@ -60,6 +60,7 @@ type CourseService struct {
 	storage     types.Storage
 	modelCfgSvc types.ModelConfigService
 	registry    *model.Registry
+	docs        *docLoader
 	// outlineMu 保护 outlineTasks；单进程内存任务表，与课程状态/大纲表共同推导任务状态
 	outlineMu    sync.Mutex
 	outlineTasks map[types.ID]*outlineTask
@@ -77,6 +78,7 @@ func NewCourseService(
 	storage types.Storage,
 	modelCfgSvc types.ModelConfigService,
 	registry *model.Registry,
+	docs *docLoader,
 ) types.CourseService {
 	return &CourseService{
 		courseRepo:   courseRepo,
@@ -87,11 +89,35 @@ func NewCourseService(
 		storage:      storage,
 		modelCfgSvc:  modelCfgSvc,
 		registry:     registry,
+		docs:         docs,
 		outlineTasks: make(map[types.ID]*outlineTask),
 	}
 }
 
 // ---- 列表 ----
+
+// ListDocuments 返回课程全部参考文档的提取状态（归属校验走 courseRepo.GetByID）。
+func (s *CourseService) ListDocuments(ctx context.Context, userID, courseID types.ID) ([]types.DocumentStatusView, error) {
+	if _, err := s.courseRepo.GetByID(ctx, userID, courseID); err != nil {
+		if errors.Is(err, types.ErrNotFound) {
+			return nil, types.ErrCourseNotFound
+		}
+		return nil, err
+	}
+	docs, err := s.docRepo.ListByCourse(ctx, courseID)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]types.DocumentStatusView, 0, len(docs))
+	for i := range docs {
+		items = append(items, types.DocumentStatusView{
+			ID:              docs[i].ID,
+			Filename:        docs[i].Filename,
+			ExtractedStatus: docs[i].ExtractedStatus,
+		})
+	}
+	return items, nil
+}
 
 func (s *CourseService) List(ctx context.Context, userID types.ID, req *types.CourseListReq) (*types.CourseListResp, error) {
 	scope := types.CourseScopeAll
@@ -157,7 +183,8 @@ func (s *CourseService) List(ctx context.Context, userID types.ID, req *types.Co
 
 // ---- 创建 ----
 
-// Create 创建草稿课程并保存参考文档。提取文本不入库；文件经 storage 落盘并记录元数据。
+// Create 创建草稿课程并保存参考文档。文档先落库为 pending，由后台任务提取；
+// 提取结果（extracted_text/status）落库缓存，生成前置等待收敛。
 func (s *CourseService) Create(ctx context.Context, userID types.ID, req *types.CreateCourseReq) (*types.CourseCreateResp, error) {
 	prompt := strings.TrimSpace(req.Prompt)
 	if prompt == "" {
@@ -165,22 +192,25 @@ func (s *CourseService) Create(ctx context.Context, userID types.ID, req *types.
 	}
 	// 前置校验全部文件格式与大小，避免写入半途失败
 	for _, f := range req.Files {
-		if _, err := util.ExtractText(f.Name, f.Data); err != nil {
-			return nil, err
+		if !util.IsSupportedDoc(f.Name) {
+			return nil, types.ErrUnsupportedFile
+		}
+		if len(f.Data) > util.MaxUploadBytes {
+			return nil, types.ErrFileTooLarge
 		}
 	}
 
 	course := &types.Course{
-		OwnerID:       userID,
-		Title:         "",
-		Prompt:        prompt,
-		Status:        types.CourseStatusDraft,
+		OwnerID:            userID,
+		Title:              "",
+		Prompt:             prompt,
+		Status:             types.CourseStatusDraft,
 		ModelConfigID:      req.ModelConfigID,
 		GenerateImages:     req.GenerateImages,
 		ImageModelConfigID: req.ImageModelConfigID,
 		Thinking:           normalizeThinking(req.Thinking),
-		OutlineCount:  normalizeOutlineCount(req.OutlineCount),
-		CreateBy:      &userID,
+		OutlineCount:       normalizeOutlineCount(req.OutlineCount),
+		CreateBy:           &userID,
 	}
 
 	err := s.tm.Transaction(ctx, func(ctx context.Context) error {
@@ -195,10 +225,11 @@ func (s *CourseService) Create(ctx context.Context, userID types.ID, req *types.
 			}
 			by := userID
 			if err := s.docRepo.Create(ctx, &types.Document{
-				CourseID: course.ID,
-				Filename: f.Name,
-				URL:      url,
-				CreateBy: &by,
+				CourseID:        course.ID,
+				Filename:        f.Name,
+				URL:             url,
+				ExtractedStatus: types.ExtractStatusPending,
+				CreateBy:        &by,
 			}); err != nil {
 				return err
 			}
@@ -207,6 +238,16 @@ func (s *CourseService) Create(ctx context.Context, userID types.ID, req *types.
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// 提取不阻塞建课：后台幂等补跑；用户快速点击生成时由 StartOutline 前置等待收敛
+	if len(req.Files) > 0 {
+		go func() {
+			bg := context.Background()
+			if _, _, err := s.docs.EnsureExtracted(bg, course.ID, false); err != nil {
+				slog.Warn("document extraction failed", "course_id", course.ID.String(), "error", err)
+			}
+		}()
 	}
 
 	return &types.CourseCreateResp{
@@ -234,6 +275,11 @@ func (s *CourseService) StartOutline(ctx context.Context, userID, courseID types
 	}
 	if course.Status != types.CourseStatusDraft {
 		return types.ErrOutlineAlreadyConfirmed
+	}
+
+	// 提取前置：在超时内幂等等待文档提取收敛（建课异步任务可能仍在进行）
+	if _, _, err := s.docs.EnsureExtractedWithTimeout(ctx, courseID); err != nil {
+		return err
 	}
 
 	s.outlineMu.Lock()
@@ -325,7 +371,7 @@ func (s *CourseService) generateOutline(ctx context.Context, userID, courseID ty
 		return nil, types.ErrOutlineAlreadyConfirmed
 	}
 
-	docsText, err := loadDocumentsText(ctx, s.docRepo, s.storage, courseID)
+	docsText, err := s.docs.LoadDocsText(ctx, courseID)
 	if err != nil {
 		return nil, err
 	}

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NIcon, NInput, NInputNumber, NSelect, NSlider, NSwitch, NTooltip, NUpload, useMessage } from 'naive-ui'
+import { NButton, NIcon, NInput, NInputNumber, NSelect, NSlider, NSwitch, NTag, NTooltip, NUpload, useMessage } from 'naive-ui'
 import type { SelectOption, UploadFileInfo } from 'naive-ui'
 import { RocketOutline, AttachOutline } from '@vicons/ionicons5'
 
@@ -28,7 +28,7 @@ const generateImages = ref(false)
 /** 选中的配图模型配置；空串表示跟随用户默认 image 配置 */
 const imageModelConfigId = ref('')
 
-const ALLOWED_EXTS = ['.txt', '.md', '.markdown']
+const ALLOWED_EXTS = ['.txt', '.md', '.markdown', '.pdf', '.docx']
 
 const modelOptions = computed<SelectOption[]>(() => {
   const label = modelConfigStore.defaultLLMConfig
@@ -77,7 +77,7 @@ function handleModelChange(value: string | number | null) {
 function handleFileChange({ file, fileList }: { file: UploadFileInfo; fileList: UploadFileInfo[] }) {
   const f = file.file
   if (f && !isAllowed(f.name)) {
-    message.error('参考文档仅支持 txt / md 格式')
+    message.error('参考文档仅支持 markdown / pdf / word 格式')
     files.value = fileList.filter((i) => i.id !== file.id)
     return
   }
@@ -230,7 +230,7 @@ onMounted(() => {
           <n-tooltip placement="top">
             <template #trigger>
               <n-upload
-                accept=".txt,.md,.markdown,text/plain,text/markdown"
+                accept=".txt,.md,.markdown,.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 :default-upload="false"
                 multiple
                 :max="8"
@@ -247,7 +247,7 @@ onMounted(() => {
                 </n-button>
               </n-upload>
             </template>
-            上传参考文档（txt / md）
+            上传参考文档（markdown / pdf / word）
           </n-tooltip>
         </div>
 

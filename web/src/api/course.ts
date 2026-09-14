@@ -244,3 +244,15 @@ export function resumeGeneration(courseId: string): Promise<Record<string, never
     method: 'post',
   })
 }
+
+/** 参考文档提取状态：pending 提取中 / success 成功 / failed 失败 */
+export interface DocumentStatus {
+  id: string
+  filename: string
+  extractedStatus: 'pending' | 'success' | 'failed'
+}
+
+/** 查询某课程参考文档提取状态（轮询获取提取进度）。 */
+export function listDocumentStatus(courseId: string): Promise<DocumentStatus[]> {
+  return request<DocumentStatus[]>({ url: `/courses/${courseId}/documents`, method: 'get' })
+}

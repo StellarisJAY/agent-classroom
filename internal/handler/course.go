@@ -40,7 +40,7 @@ func (h *CourseHandler) List(c *gin.Context) {
 	OK(c, resp)
 }
 
-// Create 创建草稿课程（multipart：prompt + files[]，参考文档仅 txt/md）。
+// Create 创建草稿课程（multipart：prompt + files[]，参考文档支持 markdown/pdf/word）。
 func (h *CourseHandler) Create(c *gin.Context) {
 	userID, ok := currentUser(c)
 	if !ok {
@@ -95,6 +95,25 @@ func (h *CourseHandler) Create(c *gin.Context) {
 		return
 	}
 	OK(c, resp)
+}
+
+// ListDocuments 查询某课程参考文档提取状态。
+func (h *CourseHandler) ListDocuments(c *gin.Context) {
+	userID, ok := currentUser(c)
+	if !ok {
+		return
+	}
+	courseID, err := pathID(c)
+	if err != nil {
+		Error(c, err)
+		return
+	}
+	items, err := h.svc.ListDocuments(c.Request.Context(), userID, courseID)
+	if err != nil {
+		Error(c, err)
+		return
+	}
+	OK(c, items)
 }
 
 // GetOutline 查询某课程已保存的大纲。

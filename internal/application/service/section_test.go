@@ -104,7 +104,7 @@ func newSectionSvc(course types.CourseRepo, outline types.OutlineRepo, sec types
 		resolve: func() (model.ProviderConfig, error) {
 			return model.ProviderConfig{Provider: "test", Model: "m", APIKey: "k"}, nil
 		},
-	}, testRegistry())
+	}, testRegistry(), newTestDocsMock())
 }
 
 // newSectionSvcFull 带自定义 questionRepo 与注册表构造，供走真实生成（含 quiz）的测试使用。
@@ -113,7 +113,7 @@ func newSectionSvcFull(course types.CourseRepo, outline types.OutlineRepo, sec t
 		resolve: func() (model.ProviderConfig, error) {
 			return model.ProviderConfig{Provider: "test", Model: "m", APIKey: "k"}, nil
 		},
-	}, registry)
+	}, registry, newTestDocsMock())
 }
 
 // testRegistry 注册 test provider，按序产出给定 LLM 响应（缺省 Slide content/steps）。

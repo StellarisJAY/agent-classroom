@@ -1,13 +1,8 @@
 package util
 
-import (
-	"strings"
+import "strings"
 
-	"github.com/StellarisJAY/agent-classroom/internal/types"
-)
-
-// 文档上传与「纯文本提取」相关约束。
-// 早期版本仅支持 .txt / .md / .markdown，后续扩展 PDF/Word 时在此扩展。
+// 参考「文档上传」格式约束。提取实现见 internal/model/extractor。
 
 const (
 	// MaxUploadBytes 单个参考文档大小上限（10MB）。
@@ -19,6 +14,8 @@ var docExts = map[string]bool{
 	".txt":      true,
 	".md":       true,
 	".markdown": true,
+	".pdf":      true,
+	".docx":     true,
 }
 
 // IsSupportedDoc 判断文件名是否为允许的参考文档格式。
@@ -26,16 +23,22 @@ func IsSupportedDoc(filename string) bool {
 	return docExts[strings.ToLower(ext(filename))]
 }
 
-// ExtractText 对上传文档做纯文本提取（txt/md 直接读取）。
-// 非支持格式或超限时返回对应业务错误。
-func ExtractText(filename string, data []byte) (string, error) {
-	if !IsSupportedDoc(filename) {
-		return "", types.ErrUnsupportedFile
+// IsPlainDoc 判断文件名是否为可直接读取的纯文本格式（提取器本地首选）。
+func IsPlainDoc(filename string) bool {
+	switch strings.ToLower(ext(filename)) {
+	case ".txt", ".md", ".markdown":
+		return true
 	}
-	if len(data) > MaxUploadBytes {
-		return "", types.ErrFileTooLarge
+	return false
+}
+
+// IsBinaryDoc 判断文件名是否需要 pdf/word 解析或外部提取服务。
+func IsBinaryDoc(filename string) bool {
+	switch strings.ToLower(ext(filename)) {
+	case ".pdf", ".docx":
+		return true
 	}
-	return string(data), nil
+	return false
 }
 
 // ext 返回小写扩展名（含点）；无扩展名返回空串。
@@ -46,3 +49,5 @@ func ext(filename string) string {
 	}
 	return filename[i:]
 }
+
+

@@ -18,6 +18,7 @@ import (
 	"github.com/StellarisJAY/agent-classroom/internal/config"
 	"github.com/StellarisJAY/agent-classroom/internal/handler"
 	"github.com/StellarisJAY/agent-classroom/internal/model"
+	"github.com/StellarisJAY/agent-classroom/internal/model/extractor"
 	"github.com/StellarisJAY/agent-classroom/internal/model/image"
 	"github.com/StellarisJAY/agent-classroom/internal/model/llm"
 	"github.com/StellarisJAY/agent-classroom/internal/router"
@@ -33,6 +34,33 @@ type App struct {
 	engine        *gin.Engine
 	logger        *slog.Logger
 	modelRegistry *model.Registry
+}
+
+// newDocExtractor 按配置创建文档提取器：mineru 仅外部；chain 外部优先本地兜底；local 仅本地。
+func newDocExtractor(cfg *config.Config) extractor.Extractor {
+	local := extractor.NewLocal()
+	switch cfg.Extractor.Provider {
+	case "local":
+		return local
+	case "mineru":
+		return extractor.NewMineru(extractor.MineruConfig{
+			Mode:       cfg.Extractor.Mineru.Mode,
+			BaseURL:    cfg.Extractor.Mineru.BaseURL,
+			AdminToken: cfg.Extractor.Mineru.AdminToken,
+			Timeout:    cfg.Extractor.Mineru.Timeout,
+		})
+	default:
+		var mineruClient *extractor.Mineru
+		if cfg.Extractor.Mineru.BaseURL != "" {
+			mineruClient = extractor.NewMineru(extractor.MineruConfig{
+				Mode:       cfg.Extractor.Mineru.Mode,
+				BaseURL:    cfg.Extractor.Mineru.BaseURL,
+				AdminToken: cfg.Extractor.Mineru.AdminToken,
+				Timeout:    cfg.Extractor.Mineru.Timeout,
+			})
+		}
+		return extractor.NewChain(local, mineruClient)
+	}
 }
 
 // NewApp 装配全部依赖
@@ -87,15 +115,22 @@ func NewApp(cfg *config.Config) (*App, error) {
 		}
 	}
 
+	// 参考文档提取链：pdf/docx 优先 minerU（未配置则退化），失败回退本地
+	documentRepo := repo.NewDocumentRepo(db)
+	docExtractor := newDocExtractor(cfg)
+	docLoader := service.NewDocLoader(documentRepo, objStorage, docExtractor, service.DocBudget{
+		MaxTokens:     cfg.Extractor.MaxDocTokens,
+		CharsPerToken: cfg.Extractor.CharsPerToken,
+	}, cfg.Extractor.ExtractTimeout)
+
 	courseRepo := repo.NewCourseRepo(db)
 	outlineRepo := repo.NewOutlineRepo(db)
 	outlineHistoryRepo := repo.NewOutlineHistoryRepo(db)
-	documentRepo := repo.NewDocumentRepo(db)
 	sectionRepo := repo.NewSectionRepo(db)
 	questionRepo := repo.NewQuestionRepo(db)
-	courseSvc := service.NewCourseService(courseRepo, outlineRepo, outlineHistoryRepo, documentRepo, store, objStorage, modelConfigSvc, modelRegistry)
+	courseSvc := service.NewCourseService(courseRepo, outlineRepo, outlineHistoryRepo, documentRepo, store, objStorage, modelConfigSvc, modelRegistry, docLoader)
 	courseHandler := handler.NewCourseHandler(courseSvc)
-	sectionSvc := service.NewSectionService(courseRepo, outlineRepo, sectionRepo, questionRepo, store, documentRepo, objStorage, modelConfigSvc, modelRegistry)
+	sectionSvc := service.NewSectionService(courseRepo, outlineRepo, sectionRepo, questionRepo, store, documentRepo, objStorage, modelConfigSvc, modelRegistry, docLoader)
 	sectionHandler := handler.NewSectionHandler(sectionSvc)
 
 	e := gin.New()

@@ -59,6 +59,7 @@ func registerAPI(api *gin.RouterGroup, cfg *config.Config, auth *handler.AuthHan
 	{
 		courseGroup.GET("", course.List)
 		courseGroup.POST("", course.Create)
+		courseGroup.GET("/:id/documents", course.ListDocuments)
 		courseGroup.GET("/:id/outline", course.GetOutline)
 		courseGroup.POST("/:id/outline/regenerate", course.RegenerateOutline)
 		courseGroup.GET("/:id/outline/task", course.OutlineTask)
