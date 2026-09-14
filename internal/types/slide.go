@@ -29,6 +29,30 @@ const (
 	SlideActionUnderline = "underline"
 	SlideActionHighlight = "highlight"
 	SlideActionBox       = "box"
+
+	// 白板/遮罩类动作。视图（slide | overlay | board）由用户手动控制，模型不产出视图切换。
+	// laser：激光指示（瞬时，仅当前步骤显示，targetElementId 与 x/y 至少其一）。
+	SlideActionLaser = "laser"
+	// draw：白板绘画，笔画数据在 Drawing 字段；笔画跨环节累积。
+	SlideActionDraw = "draw"
+	// clearBoard：清空全局笔画（由模型自主决定擦除时机）。
+	SlideActionClearBoard = "clearBoard"
+)
+
+// draw 动作的笔画类型与粗细取值。
+const (
+	SlideDrawPen    = "pen"
+	SlideDrawLine   = "line"
+	SlideDrawArrow  = "arrow"
+	SlideDrawRect   = "rect"
+	SlideDrawCircle = "circle"
+	SlideDrawText   = "text"
+)
+
+const (
+	SlideDrawSizeThin   = "thin"
+	SlideDrawSizeMedium = "medium"
+	SlideDrawSizeThick  = "thick"
 )
 
 // SlideElementShape 的形状取值。
@@ -108,8 +132,35 @@ type SlideStep struct {
 	Actions []SlideAction `json:"actions"`
 }
 
-// SlideAction 步骤动作：通过 targetElementId 引用页面元素。
+// SlideDrawing draw 动作的笔画数据。坐标与 slide 画布同系（1280×720 绝对坐标），
+// 不同环节间可直接对齐；笔画跨环节累积、由 clearBoard 控制擦除。
+type SlideDrawing struct {
+	Kind string `json:"kind"`
+	// 线条粗细：thin | medium | thick
+	Size string `json:"size,omitempty"`
+	// 描边/填充色，缺省用画布 accent
+	Color string `json:"color,omitempty"`
+	// pen / line / arrow：折线点集（pen 至少 2 点，line/arrow 恰好 2 点）
+	Points [][2]float64 `json:"points,omitempty"`
+	// rect / circle：包围盒
+	X      float64 `json:"x,omitempty"`
+	Y      float64 `json:"y,omitempty"`
+	Width  float64 `json:"width,omitempty"`
+	Height float64 `json:"height,omitempty"`
+	// text：文字内容与字号
+	Content  string `json:"content,omitempty"`
+	FontSize int    `json:"fontSize,omitempty"`
+}
+
+// SlideAction 步骤动作：通过 targetElementId 引用页面元素；
+// 白板类动作（laser / draw）使用各自专有字段。
 type SlideAction struct {
 	Type            string `json:"type"`
-	TargetElementID string `json:"targetElementId"`
+	TargetElementID string `json:"targetElementId,omitempty"`
+
+	// laser：画布坐标（画布系绝对坐标）
+	X float64 `json:"x,omitempty"`
+	Y float64 `json:"y,omitempty"`
+	// draw：笔画数据
+	Drawing *SlideDrawing `json:"drawing,omitempty"`
 }

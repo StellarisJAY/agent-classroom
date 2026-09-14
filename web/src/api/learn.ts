@@ -157,11 +157,45 @@ export interface SlideContent {
   elements: SlideElement[]
 }
 
-export type SlideActionType = 'underline' | 'highlight' | 'box'
+export type SlideActionType = 'underline' | 'highlight' | 'box' | 'laser' | 'draw' | 'clearBoard'
+
+/** 白板/遮罩视图（用户手动切换的 UI 状态）：slide 纯幻灯片 | overlay 透明遮罩 | board 不透明白板 */
+export type SlideView = 'slide' | 'overlay' | 'board'
 
 export interface SlideAction {
   type: SlideActionType
-  targetElementId: string
+  targetElementId?: string
+  /** laser：画布坐标（画布系绝对坐标）*/
+  x?: number
+  y?: number
+  /** draw：笔画数据 */
+  drawing?: SlideDrawing
+}
+
+export type SlideDrawKind = 'pen' | 'line' | 'arrow' | 'rect' | 'circle' | 'text'
+export type SlideDrawSize = 'thin' | 'medium' | 'thick'
+
+export interface SlideDrawing {
+  kind: SlideDrawKind
+  size?: SlideDrawSize
+  color?: string
+  /** pen / line / arrow：折线点集 */
+  points?: [number, number][]
+  /** rect / circle 包围盒；text 左上角 */
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  /** text 内容与字号 */
+  content?: string
+  fontSize?: number
+}
+
+/** 全局回放后的一条白板笔画（前端展示形态） */
+export interface SlideStroke {
+  /** 全局时序，用于逐笔动画与排序 */
+  order: number
+  drawing: SlideDrawing
 }
 
 export interface SlideStep {

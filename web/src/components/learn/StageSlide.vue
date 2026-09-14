@@ -16,6 +16,7 @@ import type {
   SlideTextElement,
 } from '@/api/learn'
 import { useLearnStore } from '@/stores/learn'
+import WhiteboardLayer from '@/components/learn/WhiteboardLayer.vue'
 
 const store = useLearnStore()
 
@@ -393,7 +394,7 @@ function chartInner(el: SlideChartElement) {
   }
 }
 
-// ---- 步骤动作叠加层（underline / highlight / box，多动作）----
+// ---- 步骤动作叠加层（underline / highlight / box / laser，多动作）----
 interface OverlayRect {
   key: string
   type: SlideAction['type']
@@ -405,6 +406,9 @@ interface OverlayRect {
 
 /** underline 下划线厚度（px，画布坐标系） */
 const UNDERLINE_THICKNESS = 2
+
+/** laser 点直径（画布坐标系 px） */
+const LASER_SIZE = 14
 
 const elementRefs = new Map<string, HTMLElement>()
 const overlays = ref<OverlayRect[]>([])
@@ -422,7 +426,38 @@ function measureOverlays() {
   const base = canvasEl.getBoundingClientRect()
   const list: OverlayRect[] = []
   for (const action of step.actions) {
-    const el = elementRefs.get(action.targetElementId)
+    // laser：目标元素中心（或画布坐标）画一个红点，仅当前步骤瞬时显示
+    if (action.type === 'laser') {
+      const size = LASER_SIZE * scale.value
+      if (action.targetElementId) {
+        const el = elementRefs.get(action.targetElementId)
+        if (el) {
+          const r = el.getBoundingClientRect()
+          list.push({
+            key: `${action.type}-${action.targetElementId}`,
+            type: action.type,
+            left: r.left - base.left + r.width / 2 - size / 2,
+            top: r.top - base.top + r.height / 2 - size / 2,
+            width: size,
+            height: size,
+          })
+        }
+      } else if (action.x != null && action.y != null) {
+        list.push({
+          key: `${action.type}-xy`,
+          type: action.type,
+          left: action.x * scale.value - size / 2,
+          top: action.y * scale.value - size / 2,
+          width: size,
+          height: size,
+        })
+      }
+      continue
+    }
+    if (action.type === 'draw' || action.type === 'clearBoard') {
+      continue
+    }
+    const el = elementRefs.get(action.targetElementId ?? '')
     if (!el) continue
     const r = el.getBoundingClientRect()
     if (action.type === 'underline') {
@@ -560,7 +595,10 @@ watch([() => store.stepIndex, () => store.currentIndex], async () => {
           v-for="o in overlays"
           :key="o.key"
           class="stage-overlay"
-          :class="`is-${o.type}`"
+          :class="{
+            [`is-${o.type}`]: true,
+            'is-laser': o.type === 'laser',
+          }"
           :style="{
             left: `${o.left}px`,
             top: `${o.top}px`,
@@ -568,12 +606,25 @@ watch([() => store.stepIndex, () => store.currentIndex], async () => {
             height: `${o.height}px`,
             borderColor: content.accent,
             background:
-              o.type === 'highlight'
-                ? `${content.accent}33`
-                : o.type === 'underline'
-                  ? content.accent
-                  : undefined,
+              o.type === 'laser'
+                ? '#ef4444'
+                : o.type === 'highlight'
+                  ? `${content.accent}33`
+                  : o.type === 'underline'
+                    ? content.accent
+                    : undefined,
           }"
+        />
+
+        <!-- 电子白板遮罩层：三视图（slide 隐藏 / overlay 透明 / board 白底），
+             实际白板内容为声明式笔画回放 -->
+        <whiteboard-layer
+          :strokes="store.whiteboardStrokes"
+          :view="store.manualView"
+          :accent="content.accent"
+          :canvas-width="content.width"
+          :canvas-height="content.height"
+          :scale="scale"
         />
       </div>
     </div>
@@ -705,5 +756,20 @@ watch([() => store.stepIndex, () => store.currentIndex], async () => {
 .stage-overlay.is-underline {
   border: none;
   border-radius: 1px;
+}
+.stage-overlay.is-laser {
+  border: none;
+  border-radius: 50%;
+  box-shadow: 0 0 8px 4px rgba(239, 68, 68, 0.45);
+  animation: laser-pulse 1.6s ease-in-out infinite alternate;
+}
+
+@keyframes laser-pulse {
+  from {
+    opacity: 0.95;
+  }
+  to {
+    opacity: 0.45;
+  }
 }
 </style>

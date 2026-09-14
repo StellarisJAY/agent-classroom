@@ -7,8 +7,12 @@ import type {
   CourseLearnDetail,
   Question,
   SectionLearn,
+  SlideAction,
   SlideContent,
+  SlideDrawing,
   SlideStep,
+  SlideStroke,
+  SlideView,
 } from '@/api/learn'
 
 /** 内容生成进度轮询间隔。 */
@@ -84,6 +88,73 @@ export const useLearnStore = defineStore('learn', () => {
 
   const stepCount = computed(() => slideSteps.value.length)
   const currentStep = computed<SlideStep | null>(() => slideSteps.value[stepIndex.value] ?? null)
+
+  // ---- 白板 / 遮罩视图 ----
+  // 视图是纯用户选择的会话级 UI 状态（AI 动作只控制笔画，不控制视图），
+  // 默认遮罩书写，跨步骤/跨环节保持，直到用户再改或刷新页面。
+
+  /** 默认遮罩书写：AI 开始画画时用户不会因为忘记切换而看不到板书。 */
+  const manualView = ref<SlideView>('overlay')
+
+  /** 用户手动切换白板视图。 */
+  function setSlideView(view: SlideView) {
+    manualView.value = view
+  }
+
+  /** 当前步骤内的 laser 动作（瞬时显示，不进入笔画序列）。 */
+  const laserAction = computed<SlideAction | null>(() => {
+    for (const a of currentStep.value?.actions ?? []) {
+      if (a.type === 'laser') return a
+    }
+    return null
+  })
+
+  /** 全局笔画重放：白板笔画跨环节累积（order = sectionIndex*1000 + stepIndex），
+   *  行进到某位置时取所有 order ≤ 当前位置的 draw 动作按序重放，遇 clearBoard 清空重算。
+   *  坐标按产出环节的画布尺寸归一化到 1280×720，跨环节对齐。 */
+  const whiteboardStrokes = computed<SlideStroke[]>(() => {
+    const out: SlideStroke[] = []
+    const secs = sections.value
+    const CANVAS_W = 1280
+    const CANVAS_H = 720
+    for (let si = 0; si < secs.length; si++) {
+      const s = secs[si]
+      if (!s) continue
+      if (si > currentIndex.value) break
+      if (s.type !== 'slide' || s.status !== 'done') continue
+      const steps = Array.isArray(s.steps) ? s.steps : []
+      const limit = si === currentIndex.value ? stepIndex.value : steps.length - 1
+      const c = s.content as SlideContent | null
+      const cw = c?.width && c.width > 0 ? c.width : 1280
+      const ch = c?.height && c.height > 0 ? c.height : 720
+      const sx = CANVAS_W / cw
+      const sy = CANVAS_H / ch
+      for (let j = 0; j <= limit; j++) {
+        for (const a of steps[j]?.actions ?? []) {
+          if (a.type === 'clearBoard') {
+            out.length = 0
+          } else if (a.type === 'draw' && a.drawing) {
+            out.push({ order: si * 1000 + j, drawing: renormalizeDrawing(a.drawing, sx, sy) })
+          }
+        }
+      }
+    }
+    return out
+  })
+
+  function renormalizeDrawing(d: SlideDrawing, sx: number, sy: number): SlideDrawing {
+    if (sx === 1 && sy === 1) return d
+    const scalePoints = (pts?: [number, number][]) =>
+      pts?.map(([px, py]) => [px * sx, py * sy] as [number, number])
+    return {
+      ...d,
+      points: scalePoints(d.points),
+      x: d.x !== undefined ? d.x * sx : undefined,
+      y: d.y !== undefined ? d.y * sy : undefined,
+      width: d.width !== undefined ? d.width * sx : undefined,
+      height: d.height !== undefined ? d.height * sy : undefined,
+    }
+  }
 
   const questionCount = computed(() => currentSection.value?.questions.length ?? 0)
   const demoSectionContent = computed(() =>
@@ -408,6 +479,10 @@ export const useLearnStore = defineStore('learn', () => {
     stepIndex,
     stepCount,
     currentStep,
+    manualView,
+    setSlideView,
+    laserAction,
+    whiteboardStrokes,
     questionCount,
     demoSectionContent,
     demoType,

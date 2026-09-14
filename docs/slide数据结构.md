@@ -168,8 +168,53 @@ Slide 环节的内容拆分为两部分，分列存储、分阶段生成：
 
 | 字段 | 说明 |
 |---|---|
-| `type` | `underline` \| `highlight` \| `box` |
-| `targetElementId` | 引用 `elements[].id` |
+| `type` | `underline` \| `highlight` \| `box` \| `laser` \| `draw` \| `clearBoard` |
+| `targetElementId` | 引用 `elements[].id`（underline/highlight/box 必填；laser 可选） |
+| `x` / `y` | 仅 laser：画布系绝对坐标（与 `targetElementId` 至少其一）|
+| `drawing` | 仅 `draw`：笔画数据，见下 |
+
+> 白板的显示视图（纯幻灯片 / 半透明遮罩 / 不透明白板）由**用户手动切换**，不在动作编排中；模型只产出绘画、擦拭与激光动作。
+
+### 4.1 laser —— 激光指示（瞬时）
+
+```json
+{ "type": "laser", "targetElementId": "e3" }
+{ "type": "laser", "x": 640, "y": 300 }
+```
+
+仅在**当前步骤**内显示（红点 + 淡出动效），切换步骤即消失，不进入笔画序列。元素引用与坐标至少其一。
+
+### 4.2 draw —— 白板绘画
+
+```json
+{ "type": "draw", "drawing": {
+    "kind": "pen", "size": "medium", "color": "#ef4444",
+    "points": [[100, 200], [150, 240], [220, 260]]
+} }
+```
+
+| drawing 字段 | 类型 | 说明 |
+|---|---|---|
+| `kind` | 枚举 | `pen`（随手笔迹，points ≤64 点）\| `line` \| `arrow`（均恰好 2 点）\| `rect` \| `circle`（需包围盒 x/y/width/height）\| `text`（content 必填）|
+| `size` | 枚举 | `thin` \| `medium` \| `thick`（缺省 medium，映射线宽 2/4/6）|
+| `color` | hex | 可选，缺省画布 `accent` |
+| `points` | `[x,y][]` | 画布系绝对坐标，服务端 clamp 进画布 |
+| `x/y/width/height` | number | rect/circle 包围盒 |
+| `content` / `fontSize` | string/int | text 内容与字号（缺省 24）|
+
+坐标与 slide 画布（默认 1280×720）同系，故跨环节的笔画可直接对齐。
+
+### 4.3 clearBoard —— 清空白板
+
+```json
+{ "type": "clearBoard" }
+```
+
+白板笔画**跨环节累积**；`clearBoard` 在重放序列中执行到时清空全部已累积笔画，由生成模型自主决定擦除时机（开启新主题、前序板书不再需要时）。
+
+### 4.4 笔画回放模型（关键约定）
+
+白板内容是**位置的纯派生量**：取「全局序号 `sectionIndex*1000 + stepIndex` ≤ 当前位置」的全部 draw 动作按序重放、遇 `clearBoard` 先清空重算。因此步骤回退时笔画自然收缩、前进/跳转整画布重绘而**不会重复作画**；切换到下一环节不清空画布，笔画跨环节延续，由 `clearBoard` 控制擦除。显示视图（纯幻灯片 / 遮罩 / 白板）为用户手动选择的会话级状态，不影响笔画序列。
 
 ## 5. 完整示例
 

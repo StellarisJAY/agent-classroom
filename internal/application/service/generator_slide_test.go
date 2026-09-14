@@ -275,3 +275,99 @@ func TestSlideSanitizeChartElement(t *testing.T) {
 	require.Len(t, pie.Series, 1)
 	require.Equal(t, "x", pie.Series[0].Name)
 }
+
+// ---- 白板类动作校验 ----
+
+// oidSet 构造元素 id 集合，供 sanitizeSlideSteps 测试使用。
+func oidSet(ids ...string) map[string]bool {
+	set := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set
+}
+
+// laser：元素引用或坐标至少其一；两者皆无则剔除；坐标被 clamp 进画布。
+func TestSlideSanitizeStepLaser(t *testing.T) {
+	in := []types.SlideStep{{
+		Text: "指向重点",
+		Actions: []types.SlideAction{
+			{Type: types.SlideActionLaser, TargetElementID: "e1"},
+			{Type: types.SlideActionLaser, X: 1300, Y: -10},
+			{Type: types.SlideActionLaser, TargetElementID: "ghost"},
+			{Type: types.SlideActionLaser},
+		},
+	}}
+	out := sanitizeSlideSteps(in, oidSet("e1"), 1280, 720)
+	require.Len(t, out[0].Actions, 2)
+	require.Equal(t, "e1", out[0].Actions[0].TargetElementID)
+	require.Empty(t, out[0].Actions[1].TargetElementID)
+	require.Equal(t, float64(1280), out[0].Actions[1].X)
+	require.Equal(t, float64(0), out[0].Actions[1].Y)
+}
+
+// draw：合法笔画保留并补缺省粗细；非法 kind / 空点集 / 空 text 被剔除；
+// pen 点集截断到 64 点、坐标 clamp 进画布。
+func TestSlideSanitizeStepDraw(t *testing.T) {
+	pts := make([][2]float64, 80)
+	for i := range pts {
+		pts[i] = [2]float64{float64(i), float64(i) * 10}
+	}
+	in := []types.SlideStep{{
+		Text: "画个圈",
+		Actions: []types.SlideAction{
+			{Type: types.SlideActionDraw, Drawing: &types.SlideDrawing{
+				Kind: types.SlideDrawPen, Points: pts,
+			}},
+			{Type: types.SlideActionDraw, Drawing: &types.SlideDrawing{Kind: "spray"}},           // 非法 kind
+			{Type: types.SlideActionDraw, Drawing: &types.SlideDrawing{Kind: types.SlideDrawPen}}, // 无点集
+			{Type: types.SlideActionDraw, Drawing: &types.SlideDrawing{
+				Kind: types.SlideDrawText, Content: " ", // 空 text
+			}},
+			{Type: types.SlideActionDraw, Drawing: &types.SlideDrawing{
+				Kind: types.SlideDrawRect, X: 100, Y: 100,
+			}}, // 无宽高
+			{Type: types.SlideActionDraw, Drawing: nil}, // 无笔画数据
+		},
+	}}
+	out := sanitizeSlideSteps(in, nil, 1280, 720)
+	require.Len(t, out[0].Actions, 1)
+	d := out[0].Actions[0].Drawing
+	require.Len(t, d.Points, 64)
+	require.Equal(t, float64(63), d.Points[63][0])
+	require.Equal(t, float64(630), d.Points[63][1])
+	require.Equal(t, types.SlideDrawSizeMedium, d.Size, "粗细缺省 medium")
+
+	// 坐标 clamp 进画布
+	in2 := []types.SlideStep{{
+		Text: "画一笔",
+		Actions: []types.SlideAction{
+			{Type: types.SlideActionDraw, Drawing: &types.SlideDrawing{
+				Kind:   types.SlideDrawPen,
+				Points: [][2]float64{{-5, -5}, {1300, 800}},
+			}},
+		},
+	}}
+	out2 := sanitizeSlideSteps(in2, nil, 1280, 720)
+	require.Len(t, out2[0].Actions, 1)
+	pts2 := out2[0].Actions[0].Drawing.Points
+	require.Equal(t, [2]float64{0, 0}, pts2[0])
+	require.Equal(t, [2]float64{1280, 720}, pts2[1])
+}
+
+// clearBoard：无附加字段、原样保留。
+func TestSlideSanitizeStepClearBoard(t *testing.T) {
+	in := []types.SlideStep{{
+		Text: "擦掉重新画",
+		Actions: []types.SlideAction{
+			{Type: types.SlideActionClearBoard, TargetElementID: "e1", X: 1, Y: 2,
+				Drawing: &types.SlideDrawing{Kind: types.SlideDrawRect}},
+		},
+	}}
+	out := sanitizeSlideSteps(in, oidSet("e1"), 1280, 720)
+	require.Len(t, out[0].Actions, 1)
+	a := out[0].Actions[0]
+	require.Equal(t, types.SlideActionClearBoard, a.Type)
+	require.Empty(t, a.TargetElementID)
+	require.Nil(t, a.Drawing)
+}

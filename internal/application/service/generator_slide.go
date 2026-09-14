@@ -148,7 +148,7 @@ func (g *slideGenerator) generateSteps(ctx context.Context, section *types.Secti
 			slog.Warn("invalid slide content", "content", resp.Content)
 			return fmt.Errorf("parse slide steps json: %w", xerr)
 		}
-		out = sanitizeSlideSteps(out, idSet)
+		out = sanitizeSlideSteps(out, idSet, content.Width, content.Height)
 		if len(out) == 0 {
 			return errors.New("slide steps: empty narration after sanitize")
 		}
@@ -352,7 +352,9 @@ func sanitizeSlideElements(in []types.SlideElement) []types.SlideElement {
 }
 
 // sanitizeSlideSteps 过滤空旁白步骤，剔除引用不存在元素或类型非法的动作。
-func sanitizeSlideSteps(in []types.SlideStep, idSet map[string]bool) []types.SlideStep {
+// 白板类动作（laser / draw / clearBoard）按各自规则校验：
+// laser 须有合法元素引用或坐标；draw 须有可渲染笔画。
+func sanitizeSlideSteps(in []types.SlideStep, idSet map[string]bool, canvasW, canvasH int) []types.SlideStep {
 	out := make([]types.SlideStep, 0, len(in))
 	for _, st := range in {
 		if strings.TrimSpace(st.Text) == "" {
@@ -362,19 +364,112 @@ func sanitizeSlideSteps(in []types.SlideStep, idSet map[string]bool) []types.Sli
 		for _, a := range st.Actions {
 			switch a.Type {
 			case types.SlideActionUnderline, types.SlideActionHighlight, types.SlideActionBox:
+				if !idSet[strings.TrimSpace(a.TargetElementID)] {
+					continue
+				}
+				a.TargetElementID = strings.TrimSpace(a.TargetElementID)
+				acts = append(acts, a)
+			case types.SlideActionLaser:
+				// 优先元素引用；两者皆合法时保留坐标供画布系兜底指向。
+				switch {
+				case idSet[strings.TrimSpace(a.TargetElementID)]:
+					a.TargetElementID = strings.TrimSpace(a.TargetElementID)
+					a.X = clampDrawCoord(a.X, canvasW)
+					a.Y = clampDrawCoord(a.Y, canvasH)
+				case a.X != 0 || a.Y != 0:
+					a.TargetElementID = ""
+					a.X = clampDrawCoord(a.X, canvasW)
+					a.Y = clampDrawCoord(a.Y, canvasH)
+				default:
+					continue // 无元素引用也无坐标，无法定位
+				}
+				acts = append(acts, a)
+			case types.SlideActionDraw:
+				d := sanitizeSlideDrawing(a.Drawing, canvasW, canvasH)
+				if d == nil {
+					continue
+				}
+				a.Drawing = d
+				a.TargetElementID = ""
+				acts = append(acts, a)
+			case types.SlideActionClearBoard:
+				a.TargetElementID = ""
+				a.Drawing = nil
+				acts = append(acts, a)
 			default:
 				continue
 			}
-			if !idSet[strings.TrimSpace(a.TargetElementID)] {
-				continue
-			}
-			a.TargetElementID = strings.TrimSpace(a.TargetElementID)
-			acts = append(acts, a)
 		}
 		st.Actions = acts
 		out = append(out, st)
 	}
 	return out
+}
+
+// clampDrawCoord 将坐标 clamp 到 [0, max] 区间。
+func clampDrawCoord(v float64, max int) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > float64(max) {
+		return float64(max)
+	}
+	return v
+}
+
+// sanitizeSlideDrawing 校验 draw 笔画并就地修正：kind/尺寸枚举、点集截断与坐标
+// clamp、包围盒边界、text 必须有内容。非法返回 nil（由调用方剔除）。
+func sanitizeSlideDrawing(d *types.SlideDrawing, canvasW, canvasH int) *types.SlideDrawing {
+	if d == nil {
+		return nil
+	}
+	switch d.Kind {
+	case types.SlideDrawPen, types.SlideDrawLine, types.SlideDrawArrow:
+		// 点集：line/arrow 恰好 2 点；pen 取前 64 点。
+		if len(d.Points) == 0 {
+			return nil
+		}
+		if d.Kind == types.SlideDrawPen {
+			if len(d.Points) > 64 {
+				d.Points = d.Points[:64]
+			}
+		} else if len(d.Points) < 2 {
+			return nil
+		}
+		d.Points = clampSlidePoints(d.Points, canvasW, canvasH)
+	case types.SlideDrawRect, types.SlideDrawCircle:
+		if d.Width <= 0 || d.Height <= 0 {
+			return nil
+		}
+		d.X = clampDrawCoord(d.X, canvasW)
+		d.Y = clampDrawCoord(d.Y, canvasH)
+	case types.SlideDrawText:
+		if strings.TrimSpace(d.Content) == "" {
+			return nil
+		}
+		if d.FontSize <= 0 || d.FontSize > 96 {
+			d.FontSize = 24
+		}
+		d.X = clampDrawCoord(d.X, canvasW)
+		d.Y = clampDrawCoord(d.Y, canvasH)
+	default:
+		return nil
+	}
+	switch d.Size {
+	case types.SlideDrawSizeThin, types.SlideDrawSizeMedium, types.SlideDrawSizeThick:
+	default:
+		d.Size = types.SlideDrawSizeMedium // 粗细缺省
+	}
+	return d
+}
+
+// clampSlidePoints 将点集 clamp 到画布内。
+func clampSlidePoints(pts [][2]float64, w, h int) [][2]float64 {
+	for i := range pts {
+		pts[i][0] = clampDrawCoord(pts[i][0], w)
+		pts[i][1] = clampDrawCoord(pts[i][1], h)
+	}
+	return pts
 }
 
 // sanitizeChartElement 就地校验 chart 元素数据，非法返回 false（由调用方剔除）。
