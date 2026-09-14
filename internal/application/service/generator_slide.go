@@ -337,6 +337,10 @@ func sanitizeSlideElements(in []types.SlideElement) []types.SlideElement {
 			if el.Height <= 0 {
 				el.Height = 360
 			}
+		case types.SlideElementChart:
+			if !sanitizeChartElement(&el) {
+				continue
+			}
 		default:
 			continue
 		}
@@ -371,6 +375,47 @@ func sanitizeSlideSteps(in []types.SlideStep, idSet map[string]bool) []types.Sli
 		out = append(out, st)
 	}
 	return out
+}
+
+// sanitizeChartElement 就地校验 chart 元素数据，非法返回 false（由调用方剔除）。
+// 校验图表枚举、类目/系列非空、数据长度与类目对齐；pie 强制单系列。
+func sanitizeChartElement(el *types.SlideElement) bool {
+	switch el.Chart {
+	case types.SlideChartBar, types.SlideChartLine, types.SlideChartPie:
+	default:
+		return false
+	}
+	if len(el.Categories) == 0 || len(el.Series) == 0 {
+		return false
+	}
+	n := len(el.Categories)
+	for i := range el.Categories {
+		el.Categories[i] = strings.TrimSpace(el.Categories[i])
+	}
+	kept := make([]types.SlideChartSeries, 0, len(el.Series))
+	for _, s := range el.Series {
+		s.Name = strings.TrimSpace(s.Name)
+		// 数据长度必须与类目对齐，否则语义错误，剔除该系列。
+		if len(s.Values) != n {
+			continue
+		}
+		kept = append(kept, s)
+	}
+	if len(kept) == 0 {
+		return false
+	}
+	if el.Chart == types.SlideChartPie {
+		// pie 只有一个系列；多余系列直接丢弃而非整体剔除。
+		kept = kept[:1]
+	}
+	el.Series = kept
+	if el.Width <= 0 {
+		el.Width = 560
+	}
+	if el.Height <= 0 {
+		el.Height = 360
+	}
+	return true
 }
 
 // elementIDSet 收集元素 id 集合，供讲解动作引用校验。
@@ -455,6 +500,17 @@ func slideElementSummary(c *types.SlideContent) string {
 			if el.Prompt != "" {
 				b.WriteString(" 图片: ")
 				b.WriteString(summarizeText(el.Prompt, 100))
+			}
+		case types.SlideElementChart:
+			b.WriteString(" chart=")
+			b.WriteString(el.Chart)
+			if el.Title != "" {
+				b.WriteString(" 标题: ")
+				b.WriteString(el.Title)
+			}
+			fmt.Fprintf(&b, " 类目: %s", strings.Join(el.Categories, " / "))
+			for _, s := range el.Series {
+				fmt.Fprintf(&b, " 系列[%s]: %v", s.Name, s.Values)
 			}
 		}
 		b.WriteString("\n")

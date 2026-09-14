@@ -2,8 +2,10 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { renderToString } from 'katex'
 
+import type { ECharts } from 'echarts/core'
 import type {
   SlideAction,
+  SlideChartElement,
   SlideContent,
   SlideElement,
   SlideFormulaElement,
@@ -134,6 +136,9 @@ function isImage(e: SlideElement): e is SlideImageElement {
 function isMermaid(e: SlideElement): e is SlideMermaidElement {
   return e.type === 'mermaid'
 }
+function isChart(e: SlideElement): e is SlideChartElement {
+  return e.type === 'chart'
+}
 
 // ---- mermaid 流程图渲染（动态导入，源码 → SVG 缓存） ----
 interface MermaidRendered {
@@ -214,6 +219,180 @@ function mermaidBox(el: SlideMermaidElement) {
   }
 }
 
+// ---- chart 统计图渲染（动态按需导入 echarts，SVG 渲染，实例缓存） ----
+interface ChartEntry {
+  /** 元素数据签名（id + 数据），用于判断缓存是否失效 */
+  key: string
+  inst: ECharts | null
+}
+
+async function loadEcharts() {
+  const core = await import('echarts/core')
+  const { BarChart, LineChart, PieChart } = await import('echarts/charts')
+  const { GridComponent, TitleComponent, LegendComponent } = await import('echarts/components')
+  const { SVGRenderer } = await import('echarts/renderers')
+  core.use([BarChart, LineChart, PieChart, GridComponent, TitleComponent, LegendComponent, SVGRenderer])
+  return { init: core.init }
+}
+
+/** 元素 id → 图表实例（元素移除/数据变化时 dispose） */
+const chartEntries = new Map<string, ChartEntry>()
+const chartRefs = new Map<string, HTMLElement>()
+let echartsLoader: Promise<Awaited<ReturnType<typeof loadEcharts>>> | null = null
+
+function loadEchartsOnce() {
+  echartsLoader ??= loadEcharts()
+  return echartsLoader
+}
+
+function setChartRef(id: string, node: unknown) {
+  if (node instanceof HTMLElement) chartRefs.set(id, node)
+  else chartRefs.delete(id)
+}
+
+async function renderChart(el: SlideChartElement, accent: string) {
+  const key = `${el.id}@${JSON.stringify({ ...el, id: '', x: 0, y: 0 })}`
+  const entry = chartEntries.get(el.id)
+  if (entry && entry.key === key) return
+  entry?.inst?.dispose()
+  chartEntries.set(el.id, { key, inst: null })
+  try {
+    await nextTick()
+    const dom = chartRefs.get(el.id)
+    if (!dom) return
+    const { init } = await loadEchartsOnce()
+    const option = buildChartOption(el, accent)
+    const inst = init(dom, null, { renderer: 'svg', width: el.width, height: el.height })
+    inst.setOption(option)
+    chartEntries.set(el.id, { key, inst })
+    await nextTick(measureOverlays)
+  } catch {
+    // 渲染失败：保持 inst 为 null，元素不显示，不影响其余内容（与 mermaid 一致）
+  }
+}
+
+/** accent 派生色板：强调色打头，后续系列用固定的和谐补充色 */
+function chartPalette(accent: string): string[] {
+  return [
+    accent,
+    '#6366f1',
+    '#f59e0b',
+    '#ef4444',
+    '#10b981',
+    '#3b82f6',
+    '#8b5cf6',
+    '#f97316',
+  ]
+}
+
+/** 由封闭的宽表数据确定性构建 echarts option（硬编码全部样式，模型只给数据） */
+function buildChartOption(el: SlideChartElement, accent: string): Record<string, unknown> {
+  const palette = chartPalette(accent)
+  const title = el.title
+    ? {
+        text: el.title,
+        left: 'center',
+        top: 6,
+        textStyle: { fontSize: 15, fontWeight: 600, color: '#0f172a' },
+      }
+    : undefined
+
+  if (el.chart === 'pie') {
+    const series = el.series[0]
+    if (!series) return { color: palette, title, series: [] }
+    return {
+      color: palette,
+      title,
+      series: [
+        {
+          type: 'pie',
+          radius: '64%',
+          center: ['50%', el.title ? '58%' : '52%'],
+          data: el.categories.map((name, i) => ({ name, value: series.values[i] })),
+          label: { color: '#334155', fontSize: 13 },
+          labelLine: { lineStyle: { color: '#94a3b8' } },
+        },
+      ],
+    }
+  }
+
+  const legendTop = el.title ? 34 : 6
+  return {
+    color: palette,
+    title,
+    grid: { left: 12, right: 20, top: el.title ? 66 : 34, bottom: 8, containLabel: true },
+    legend:
+      el.series.length > 1
+        ? {
+            top: legendTop,
+            left: 'center',
+            itemWidth: 14,
+            itemHeight: 9,
+            textStyle: { color: '#334155', fontSize: 12 },
+          }
+        : undefined,
+    xAxis: {
+      type: 'category',
+      data: el.categories,
+      axisTick: { show: false },
+      axisLine: { lineStyle: { color: '#cbd5e1' } },
+      axisLabel: { color: '#64748b', fontSize: 12 },
+    },
+    yAxis: {
+      type: 'value',
+      splitLine: { lineStyle: { color: '#e2e8f0' } },
+      axisLabel: { color: '#64748b', fontSize: 12 },
+    },
+    series: el.series.map((s) =>
+      el.chart === 'line'
+        ? { name: s.name, type: 'line', data: s.values, symbolSize: 6 }
+        : {
+            name: s.name,
+            type: 'bar',
+            data: s.values,
+            barMaxWidth: 36,
+            itemStyle: { borderRadius: [3, 3, 0, 0] },
+          },
+    ),
+  }
+}
+
+/** chart 距画布底边的最小边距（画布坐标系 px） */
+const CHART_BOTTOM_MARGIN = 24
+
+/** 计算图表显示尺寸（画布坐标系）：等比缩放到「不超 el.width、不超画布底边」。 */
+function chartSize(el: SlideChartElement, c: SlideContent): { w: number; h: number } {
+  const availW = Math.max(el.width, 0)
+  const availH = c.height - el.y - CHART_BOTTOM_MARGIN
+  if (availW <= 0 || availH <= 0) return { w: availW, h: Math.min(el.height, Math.max(availH, 0)) }
+  const s = Math.min(availW / el.width, availH / el.height)
+  return { w: el.width * s, h: el.height * s }
+}
+
+function chartBox(el: SlideChartElement) {
+  const c = content.value
+  const size = c ? chartSize(el, c) : { w: el.width, h: el.height }
+  return {
+    left: px(el.x),
+    top: px(el.y),
+    width: px(size.w),
+    height: px(size.h),
+  }
+}
+
+/** 内层图表按画布原始尺寸渲染，再整体缩放到目标尺寸（SVG 内容清晰缩放） */
+function chartInner(el: SlideChartElement) {
+  const c = content.value
+  const size = c ? chartSize(el, c) : { w: el.width, h: el.height }
+  const s = el.width > 0 ? size.w / el.width : 1
+  return {
+    width: `${el.width}px`,
+    height: `${el.height}px`,
+    transform: `scale(${s})`,
+    transformOrigin: '0 0',
+  }
+}
+
 // ---- 步骤动作叠加层（underline / highlight / box，多动作）----
 interface OverlayRect {
   key: string
@@ -271,17 +450,24 @@ function measureOverlays() {
   overlays.value = list
 }
 
-// 解析到 mermaid 元素后触发渲染。
+// 解析到 mermaid 元素后触发渲染；immediate 保证从非 slide 环节首次挂载
+// （组件带着已有 content 被创建，watch 不会再收到变化）时也能渲染。
 watch(
   content,
   (c) => {
     if (!c) return
     for (const el of c.elements) {
       if (isMermaid(el)) void renderMermaid(el)
+      if (isChart(el)) void renderChart(el, c.accent)
     }
   },
-  { deep: true },
+  { deep: true, immediate: true },
 )
+
+onBeforeUnmount(() => {
+  for (const entry of chartEntries.values()) entry.inst?.dispose()
+  chartEntries.clear()
+})
 
 watch([() => store.stepIndex, () => store.currentIndex], async () => {
   await nextTick()
@@ -358,6 +544,15 @@ watch([() => store.stepIndex, () => store.currentIndex], async () => {
             :style="mermaidBox(el)"
           >
             <div class="stage-el--mermaid-svg" v-html="mermaidOutputOf(el)?.svg" />
+          </div>
+
+          <div
+            v-else-if="isChart(el)"
+            :ref="(n) => setRef(el.id, n)"
+            class="stage-el stage-el--chart"
+            :style="chartBox(el)"
+          >
+            <div :ref="(n) => setChartRef(el.id, n)" class="stage-el--chart-inner" :style="chartInner(el)" />
           </div>
         </template>
 
@@ -475,6 +670,16 @@ watch([() => store.stepIndex, () => store.currentIndex], async () => {
   width: 100%;
   height: auto;
   max-width: none;
+}
+
+.stage-el--chart {
+  overflow: hidden;
+}
+.stage-el--chart-inner {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: hidden;
 }
 .stage-el--list-ol,
 .stage-el--list-ul {

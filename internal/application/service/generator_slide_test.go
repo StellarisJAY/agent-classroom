@@ -234,3 +234,44 @@ func TestSlideGenerateKeepsMermaidElement(t *testing.T) {
 	require.Len(t, steps, 1)
 	require.Equal(t, "e1", steps[0].Actions[0].TargetElementID)
 }
+
+// chart 元素合法时保留并补默认尺寸；非法枚举 / 数据长度不对齐 / 空数据被剔除；
+// pie 多余系列被丢弃。
+func TestSlideSanitizeChartElement(t *testing.T) {
+	c := &types.SlideContent{Elements: []types.SlideElement{
+		{ID: "e1", Type: types.SlideElementChart, X: 80, Y: 200,
+			Chart: types.SlideChartBar, Title: "对比",
+			Categories: []string{"Q1", "Q2"},
+			Series:     []types.SlideChartSeries{{Name: "线上", Values: []float64{1, 2}}},
+		},
+		{ID: "e2", Type: types.SlideElementChart, X: 80, Y: 200,
+			Chart:      "donut", // 非法枚举
+			Categories: []string{"A"}, Series: []types.SlideChartSeries{{Name: "x", Values: []float64{1}}},
+		},
+		{ID: "e3", Type: types.SlideElementChart, X: 80, Y: 200,
+			Chart:      types.SlideChartLine,
+			Categories: []string{"A", "B"},
+			Series:     []types.SlideChartSeries{{Name: "x", Values: []float64{1}}}, // 长度不对齐
+		},
+		{ID: "e4", Type: types.SlideElementChart, X: 80, Y: 200,
+			Chart:      types.SlideChartPie,
+			Categories: []string{"A", "B"},
+			Series: []types.SlideChartSeries{
+				{Name: "x", Values: []float64{1, 2}},
+				{Name: "y", Values: []float64{3, 4}}, // pie 多余系列
+			},
+		},
+	}}
+	require.NoError(t, validateSlideContent(c))
+	require.Len(t, c.Elements, 2)
+
+	bar := c.Elements[0]
+	require.Equal(t, 560, bar.Width)
+	require.Equal(t, 360, bar.Height)
+	require.Len(t, bar.Series, 1)
+
+	pie := c.Elements[1]
+	require.Equal(t, types.SlideElementChart, pie.Type)
+	require.Len(t, pie.Series, 1)
+	require.Equal(t, "x", pie.Series[0].Name)
+}

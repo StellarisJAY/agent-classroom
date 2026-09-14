@@ -14,6 +14,14 @@ const (
 	SlideElementImage   = "image"
 
 	SlideElementMermaid = "mermaid"
+	SlideElementChart   = "chart"
+)
+
+// SlideElementChart 的图表类型取值。
+const (
+	SlideChartBar  = "bar"
+	SlideChartLine = "line"
+	SlideChartPie  = "pie"
 )
 
 // Slide 动作类型。
@@ -71,6 +79,19 @@ type SlideElement struct {
 	// image 专用：Prompt 为文生图提示词（生成前），Src 为生成后的图片 URL（生成后回填）。
 	Prompt string `json:"prompt,omitempty"`
 	Src    string `json:"src,omitempty"`
+
+	// chart 专用：封闭的"宽表"数据结构，前端确定性翻译为 ECharts 配置。
+	Chart      string             `json:"chart,omitempty"`
+	Title      string             `json:"title,omitempty"`
+	Categories []string           `json:"categories,omitempty"`
+	Series     []SlideChartSeries `json:"series,omitempty"`
+}
+
+// SlideChartSeries chart 元素的一个数据系列。
+// pie 固定只取第一个系列：categories 为扇区名，values 为扇区值。
+type SlideChartSeries struct {
+	Name   string    `json:"name"`
+	Values []float64 `json:"values"`
 }
 
 // SlideTextStyle text 元素的行内样式。

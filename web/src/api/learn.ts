@@ -118,6 +118,28 @@ export interface SlideMermaidElement {
   fontSize?: number
 }
 
+export type SlideChartKind = 'bar' | 'line' | 'pie'
+
+export interface SlideChartSeries {
+  name: string
+  values: number[]
+}
+
+export interface SlideChartElement {
+  id: string
+  type: 'chart'
+  x: number
+  y: number
+  width: number
+  height: number
+  /** bar: 数量对比 / line: 趋势 / pie: 占比（固定单系列） */
+  chart: SlideChartKind
+  title?: string
+  /** bar/line 作横轴类目；pie 作扇区名 */
+  categories: string[]
+  series: SlideChartSeries[]
+}
+
 export type SlideElement =
   | SlideTextElement
   | SlideFormulaElement
@@ -125,6 +147,7 @@ export type SlideElement =
   | SlideListElement
   | SlideImageElement
   | SlideMermaidElement
+  | SlideChartElement
 
 export interface SlideContent {
   width: number
