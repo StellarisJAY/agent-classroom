@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,6 +43,14 @@ func TestChat(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, "你好", resp.Content)
+}
+
+// asToolStream 断言 client 支持 ChatToolStream 并返回该视图。
+func asToolStream(t *testing.T, c model.LLMClient) model.ToolStreamClient {
+	t.Helper()
+	tc, ok := c.(model.ToolStreamClient)
+	require.True(t, ok)
+	return tc
 }
 
 func TestChatStream(t *testing.T) {
@@ -195,4 +204,168 @@ func TestChatStreamNoTimeoutByDefault(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, "好", got)
+}
+
+// 流式工具调用：arguments 跨分片增量，两个调用（index 0/1）交错输出，按 finish_reason 汇总。
+func TestChatToolStreamToolCalls(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_a\",\"type\":\"function\",\"function\":{\"name\":\"highlight\",\"arguments\":\"{\\\"elem\\\"\"}}]}}]}\n\n" +
+				"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":1,\"id\":\"call_b\",\"type\":\"function\",\"function\":{\"name\":\"jump\",\"arguments\":\"{\\\"sec\\\"\"}}]}}]}\n\n" +
+				"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\":1}\"}}]}}]}\n\n" +
+				"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":1,\"function\":{\"arguments\":\":2}\"}}]}}]}\n\n" +
+				"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\"}}]}}]}\n\n" +
+				"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n" +
+				"data: [DONE]\n\n",
+		))
+	})
+	var textGot []string
+	var calls []model.ToolCall
+	err := asToolStream(t, client).ChatToolStream(context.Background(), model.ChatRequest{
+		Messages: []model.ChatMessage{{Role: model.RoleUser, Content: "hi"}},
+	}, model.StreamHandler{
+		OnText: func(delta string) error { textGot = append(textGot, delta); return nil },
+		OnToolCall: func(tc []model.ToolCall) error {
+			calls = append(calls, tc...)
+			return nil
+		},
+	})
+	require.NoError(t, err)
+	require.Empty(t, textGot)
+	require.Len(t, calls, 2)
+	require.Equal(t, "call_a", calls[0].ID)
+	require.Equal(t, "highlight", calls[0].Function.Name)
+	require.Equal(t, `{"elem":1}`, calls[0].Function.Arguments)
+	require.Equal(t, "call_b", calls[1].ID)
+	require.Equal(t, `{"sec":2}`, calls[1].Function.Arguments)
+}
+
+// 无 finish_reason 时未 flush 的工具调用应在 [DONE] 汇总。
+func TestChatToolStreamFlushAtDone(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"draw\",\"arguments\":\"{}\"}}]}}]}\n\n" +
+				"data: [DONE]\n\n",
+		))
+	})
+	var calls []model.ToolCall
+	err := asToolStream(t, client).ChatToolStream(context.Background(), model.ChatRequest{
+		Messages: []model.ChatMessage{{Role: model.RoleUser, Content: "hi"}},
+	}, model.StreamHandler{OnToolCall: func(tc []model.ToolCall) error {
+		calls = append(calls, tc...)
+		return nil
+	}})
+	require.NoError(t, err)
+	require.Len(t, calls, 1)
+	require.Equal(t, "draw", calls[0].Function.Name)
+	require.Equal(t, "function", calls[0].Type, "上游未带 type 时应回填默认值")
+}
+
+// 文本增量与工具调用混合输出：各走各的回调，互不干扰。
+func TestChatToolStreamMixed(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\"content\":\"看这里\"}}]}\n\n" +
+				"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"highlight\",\"arguments\":\"{}\"}}]}}]}\n\n" +
+				"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n" +
+				"data: [DONE]\n\n",
+		))
+	})
+	var text strings.Builder
+	var calls []model.ToolCall
+	err := asToolStream(t, client).ChatToolStream(context.Background(), model.ChatRequest{
+		Messages: []model.ChatMessage{{Role: model.RoleUser, Content: "hi"}},
+	}, model.StreamHandler{
+		OnText: func(delta string) error { text.WriteString(delta); return nil },
+		OnToolCall: func(tc []model.ToolCall) error {
+			calls = append(calls, tc...)
+			return nil
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "看这里", text.String())
+	require.Len(t, calls, 1)
+}
+
+// OnToolCall 返回 error 时中断流。
+func TestChatToolStreamInterrupt(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"draw\",\"arguments\":\"{}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n" +
+				"data: {\"choices\":[{\"delta\":{\"content\":\"after\"}}]}\n\n" +
+				"data: [DONE]\n\n",
+		))
+	})
+	calls := 0
+	err := asToolStream(t, client).ChatToolStream(context.Background(), model.ChatRequest{
+		Messages: []model.ChatMessage{{Role: model.RoleUser, Content: "hi"}},
+	}, model.StreamHandler{OnToolCall: func(tc []model.ToolCall) error {
+		calls++
+		return context.Canceled
+	}})
+	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, 1, calls)
+}
+
+// 请求体应携带 Tools 与旋转工具消息序列（assistant tool_calls + tool 结果）。
+func TestChatToolStreamPayload(t *testing.T) {
+	var got struct {
+		Tools []model.Tool `json:"tools"`
+		Msgs  []struct {
+			Role       string           `json:"role"`
+			Content    *string          `json:"content"`
+			ToolCalls  []model.ToolCall `json:"tool_calls"`
+			ToolCallID *string          `json:"tool_call_id"`
+		} `json:"messages"`
+	}
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	})
+	err := asToolStream(t, client).ChatToolStream(context.Background(), model.ChatRequest{
+		Messages: []model.ChatMessage{
+			{Role: model.RoleUser, Content: "讲讲"},
+			{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{
+				ID: "c1", Type: "function",
+				Function: model.ToolCallFunc{Name: "highlight", Arguments: "{}"},
+			}}},
+			{Role: model.RoleTool, ToolCallID: "c1", Name: "highlight", Content: "success"},
+		},
+		Tools: []model.Tool{{
+			Type: "function",
+			Function: model.ToolFunction{
+				Name:        "highlight",
+				Description: "高亮",
+				Parameters:  map[string]any{"type": "object"},
+			},
+		}},
+	}, model.StreamHandler{})
+	require.NoError(t, err)
+	require.Len(t, got.Tools, 1)
+	require.Equal(t, "function", got.Tools[0].Type)
+	require.Equal(t, "highlight", got.Tools[0].Function.Name)
+	require.Len(t, got.Msgs, 3)
+	require.Nil(t, got.Msgs[1].Content, "带 tool_calls 的 assistant 消息不应发送空 content")
+	require.NotNil(t, got.Msgs[2].ToolCallID)
+	require.Equal(t, "c1", *got.Msgs[2].ToolCallID)
+	require.Equal(t, "success", *got.Msgs[2].Content)
+}
+
+// 非流式响应中的 tool_calls 应解析到 ChatResponse。
+func TestChatNonStreamToolCalls(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"","tool_calls":[{"id":"c1","type":"function","function":{"name":"draw","arguments":"{}"}}]}}]}`))
+	})
+	resp, err := client.Chat(context.Background(), model.ChatRequest{
+		Messages: []model.ChatMessage{{Role: model.RoleUser, Content: "hi"}},
+	})
+	require.NoError(t, err)
+	require.Len(t, resp.ToolCalls, 1)
+	require.Equal(t, "draw", resp.ToolCalls[0].Function.Name)
 }

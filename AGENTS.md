@@ -161,3 +161,9 @@ web/
 - 后端测试用 testify：单元测试直接 `go test ./...`。
 - 依赖数据库的集成测试（`*_integration_test.go`、`transaction_test.go`）需设置 `TEST_DB_*` 环境变量（TEST_DB_HOST/PORT/USER/PASSWORD/NAME），未设置时自动 skip。
 - 前端（web/）：`pnpm test:unit`（vitest）、`pnpm type-check`（vue-tsc）、`pnpm lint`。
+
+## 项目约定
+
+- 完成一个任务后，需要更新docs下的文档。
+- 对项目目录结构的修改后，需要修改AGENTS.md中的项目结构以保持一致。
+- 使用中文输出思考内容、回答用户问题、编写注释和文档。

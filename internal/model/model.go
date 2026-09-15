@@ -15,12 +15,47 @@ const (
 	RoleSystem    Role = "system"
 	RoleUser      Role = "user"
 	RoleAssistant Role = "assistant"
+	// RoleTool 工具执行结果消息，ToolCallID 标识其对应的 assistant 工具调用。
+	RoleTool Role = "tool"
 )
+
+// ToolFunction 工具函数定义。
+type ToolFunction struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	// Parameters JSON Schema 对象（map / 自定义结构均可，原样透传）。
+	Parameters any `json:"parameters"`
+}
+
+// Tool 工具定义（请求侧 Tools 数组元素）。
+type Tool struct {
+	Type     string       `json:"type"` // 当前固定 "function"
+	Function ToolFunction `json:"function"`
+}
+
+// ToolCall 一条工具调用记录。Arguments 为 JSON 原始字符串（协议约定，不解析透传）。
+type ToolCall struct {
+	ID       string       `json:"id"`
+	Type     string       `json:"type,omitempty"` // "function"
+	Function ToolCallFunc `json:"function"`
+}
+
+// ToolCallFunc 工具调用的函数名与参数（JSON 字符串，与协议对齐）。
+type ToolCallFunc struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
 
 // ChatMessage 一条对话消息
 type ChatMessage struct {
 	Role    Role   `json:"role"`
-	Content string `json:"content"`
+	Content string `json:"content,omitempty"`
+	// ToolCalls assistant 消息发起的工具调用（tool 角色消息不携带）。
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	// ToolCallID tool 角色消息对应的调用 ID。
+	ToolCallID string `json:"tool_call_id,omitempty"`
+	// Name tool 角色消息标识执行者（可选）。
+	Name string `json:"name,omitempty"`
 }
 
 // ProviderConfig 一次模型调用的最小可用配置（APIKey 已解密）。
@@ -50,15 +85,26 @@ type ChatRequest struct {
 	MaxTokens   *int     // 可选
 	// Thinking 思考限制：off / default / max（空串视为 default）。是否真正下发由各 provider 适配。
 	Thinking string
+	// Tools 可注入的工具定义（OpenAI tools 格式）；为空不随请求下发。
+	Tools []Tool
 }
 
 // ChatResponse 非流式对话结果
 type ChatResponse struct {
-	Content string
+	Content   string
+	ToolCalls []ToolCall // 非流式响应中的工具调用（可能为空）
 }
 
 // StreamCallback 流式增量回调；返回 error 可中断生成。
 type StreamCallback func(delta string) error
+
+// StreamHandler 流式事件分发器（工具调用流使用）。
+// OnText 处理文本增量；OnToolCall 在本轮输出的全部工具调用增量
+// 拼装完成后回调一次（纯文本轮不触发）。二者均可为 nil，返回 error 中断生成。
+type StreamHandler struct {
+	OnText     StreamCallback
+	OnToolCall func(toolCalls []ToolCall) error
+}
 
 // LLMClient 大模型客户端接口
 type LLMClient interface {
@@ -66,6 +112,14 @@ type LLMClient interface {
 	Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error)
 	// ChatStream 流式对话，逐片回调 onDelta；onDelta 返回 error 时提前中断。
 	ChatStream(ctx context.Context, req ChatRequest, onDelta StreamCallback) error
+}
+
+// ToolStreamClient 支持工具调用流式输出的客户端扩展接口。
+// 独立于 LLMClient 定义，避免既有实现（测试 fake 等）被迫实现。
+// 含 Tools 的请求经此方法发起：文本增量交 OnText，拼装完成的
+// 工具调用集合整体交 OnToolCall（一次对话轮最多回调一次）。
+type ToolStreamClient interface {
+	ChatToolStream(ctx context.Context, req ChatRequest, handler StreamHandler) error
 }
 
 // LLMFactory 根据配置构造 LLMClient 的工厂。
