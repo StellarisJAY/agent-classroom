@@ -81,22 +81,6 @@ export function listMessages(courseId: string): ChatMessage[] {
   return seedMessages(courseId)
 }
 
-export function buildAssistantReply(question: string, sectionId: string | null): string {
-  const section = sectionId === 'sec-quiz'
-  if (section) {
-    return (
-      '我提示一下思路，但不会直接给出答案：' +
-      '注意区分数组声明与初始化，以及下标访问的起点。你可以结合前面的讲解再想想，' +
-      '如果仍有疑问，换个角度问我「为什么会这样」也可以。'
-    )
-  }
-  const trimmed = question.trim()
-  if (trimmed.includes('为什么') || trimmed.includes('区别')) {
-    return '这是一个很好的问题。数组把同类型元素放进连续内存，正因如此才能按下标做 O(1) 随机访问。需要的话，我可以进一步解释内存布局与访问原理。'
-  }
-  return '根据这节课的内容：数组是连续内存里的同类型元素集合，声明后长度固定，按下标（从 0 起）访问。你可以点击「下一步」回顾讲解步骤，或上传疑问我继续解答。'
-}
-
 // ---- 变更 ----
 
 export function setProgress(courseId: string, status: string): void {

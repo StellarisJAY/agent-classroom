@@ -85,10 +85,11 @@ const typeName = computed(() =>
             <span>HTML 代码</span>
           </div>
           <textarea
-            v-model="store.demoDraft"
+            :value="store.demoDraft"
             class="stage-demo__code"
             spellcheck="false"
             aria-label="演示代码编辑器"
+            @update:value="(v: string) => store.setDemoDraft(v)"
           />
         </div>
       </div>

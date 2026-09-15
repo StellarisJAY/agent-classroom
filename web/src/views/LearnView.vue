@@ -5,18 +5,23 @@ import { NButton, NIcon, NSpin } from 'naive-ui'
 import { RefreshOutline } from '@vicons/ionicons5'
 
 import ChatPanel from '@/components/learn/ChatPanel.vue'
+import DiscussionPanel from '@/components/learn/DiscussionPanel.vue'
 import LeaveButton from '@/components/learn/LeaveButton.vue'
 import StageDemo from '@/components/learn/StageDemo.vue'
 import StageQuiz from '@/components/learn/StageQuiz.vue'
 import StageSlide from '@/components/learn/StageSlide.vue'
 import StageToolbar from '@/components/learn/StageToolbar.vue'
 import TeacherBar from '@/components/learn/TeacherBar.vue'
+import { useIsMobile } from '@/composables/useBreakpoint'
 import { useConversationStore } from '@/stores/conversation'
+import { useDiscussionStore } from '@/stores/discussion'
 import { useLearnStore } from '@/stores/learn'
 
 const route = useRoute()
 const store = useLearnStore()
 const chat = useConversationStore()
+const discussion = useDiscussionStore()
+const isMobile = useIsMobile()
 
 const courseId = computed(() => String(route.params.courseId ?? ''))
 
@@ -35,6 +40,7 @@ onBeforeUnmount(() => {
   if (store.reachedLast()) {
     store.markProgress('completed').catch(() => {})
   }
+  discussion.reset()
   chat.reset()
   store.stopGenPolling()
 })
@@ -64,8 +70,8 @@ function retry() {
       </span>
     </header>
 
-    <!-- 主舞台 -->
-    <main class="learn-view__stage" aria-live="polite">
+    <!-- 主舞台：桌面端讨论模式时右侧固定 360px 侧板占布局；移动端侧板转底部 sheet -->
+    <main class="learn-view__stage" :class="{ 'is-discussion': discussion.active && !isMobile }" aria-live="polite">
       <n-spin v-if="store.loading" class="learn-view__center" />
 
       <div v-else-if="store.error" class="learn-view__center">
@@ -78,36 +84,46 @@ function retry() {
         </n-button>
       </div>
 
-      <div
-        v-else-if="store.currentSection"
-        class="learn-view__stage-inner"
-        :data-type="store.currentSection.type"
+      <template v-else-if="store.currentSection">
+        <div
+          class="learn-view__stage-inner"
+          :data-type="store.currentSection.type"
+        >
+          <!-- 自动重试状态提示 -->
+          <p v-if="store.autoRetryCount > 0 && !store.stalled" class="learn-view__autoretry">
+            内容生成已中断，已自动重试 {{ store.autoRetryCount }} 次…
+          </p>
+
+          <!-- 生成中断：自动重试次数耗尽 → 手动重试横幅 -->
+          <div v-if="store.stalled" class="learn-view__stalled">
+            <p>内容生成已中断</p>
+            <n-button size="small" type="primary" @click="store.retryGeneration()">
+              重试继续生成
+            </n-button>
+          </div>
+
+          <!-- 该环节尚未生成完成 → 转圈等待 -->
+          <div v-if="store.pendingSection" class="learn-view__center">
+            <n-spin size="medium" />
+            <span class="learn-view__pending-hint">该环节正在生成中，请稍候…</span>
+          </div>
+
+          <template v-else-if="!store.stalled">
+            <StageSlide v-if="store.isSlide" />
+            <StageQuiz v-else-if="store.isQuiz" />
+            <StageDemo v-else-if="store.isDemo" />
+          </template>
+        </div>
+      </template>
+
+      <!-- 讨论侧板：桌面布局占位（is-discussion 收窄舞台宽），移动端转底部 sheet -->
+      <aside
+        v-if="discussion.active"
+        class="learn-view__discussion"
+        :class="{ 'is-sheet': isMobile }"
       >
-        <!-- 自动重试状态提示 -->
-        <p v-if="store.autoRetryCount > 0 && !store.stalled" class="learn-view__autoretry">
-          内容生成已中断，已自动重试 {{ store.autoRetryCount }} 次…
-        </p>
-
-        <!-- 生成中断：自动重试次数耗尽 → 手动重试横幅 -->
-        <div v-if="store.stalled" class="learn-view__stalled">
-          <p>内容生成已中断</p>
-          <n-button size="small" type="primary" @click="store.retryGeneration()">
-            重试继续生成
-          </n-button>
-        </div>
-
-        <!-- 该环节尚未生成完成 → 转圈等待 -->
-        <div v-if="store.pendingSection" class="learn-view__center">
-          <n-spin size="medium" />
-          <span class="learn-view__pending-hint">该环节正在生成中，请稍候…</span>
-        </div>
-
-        <template v-else-if="!store.stalled">
-          <StageSlide v-if="store.isSlide" />
-          <StageQuiz v-else-if="store.isQuiz" />
-          <StageDemo v-else-if="store.isDemo" />
-        </template>
-      </div>
+        <DiscussionPanel />
+      </aside>
     </main>
 
     <!-- 统一工具栏：步骤切换/提交(中) + 大纲(右) -->
@@ -160,6 +176,35 @@ function retry() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* 桌面端讨论模式：舞台 + 固定侧板同行布局（侧板参与布局、无遮罩） */
+.learn-view__stage.is-discussion {
+  flex-direction: row;
+}
+.learn-view__stage.is-discussion .learn-view__stage-inner {
+  width: auto;
+  min-width: 0;
+}
+.learn-view__discussion {
+  flex: 0 0 360px;
+  min-height: 0;
+  border-left: 1px solid var(--app-divider, #e2e8f0);
+}
+
+/* 移动端：底部 sheet（占下半，无遮罩，上半舞台动作仍可见） */
+.learn-view__discussion.is-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  flex: none;
+  height: 46%;
+  border-left: none;
+  border-top: 1px solid var(--app-divider, #e2e8f0);
+  box-shadow: 0 -6px 24px rgba(15, 23, 42, 0.12);
+  z-index: 900;
+  background: var(--app-header-bg, #ffffff);
 }
 
 .learn-view__stage-inner {

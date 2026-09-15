@@ -9,11 +9,14 @@ import type {
   SectionLearn,
   SlideAction,
   SlideContent,
-  SlideDrawing,
   SlideStep,
   SlideStroke,
   SlideView,
 } from '@/api/learn'
+import { collectReplayStrokes } from '@/stores/learnStrokes'
+
+/** collectReplayStrokes 的入参形态（窗口内只读 type/status/steps/content）。 */
+type ReplaySection = Parameters<typeof collectReplayStrokes>[0][number]
 
 /** 内容生成进度轮询间隔。 */
 export const CONTENT_POLL_INTERVAL_MS = 3000
@@ -111,50 +114,10 @@ export const useLearnStore = defineStore('learn', () => {
 
   /** 全局笔画重放：白板笔画跨环节累积（order = sectionIndex*1000 + stepIndex），
    *  行进到某位置时取所有 order ≤ 当前位置的 draw 动作按序重放，遇 clearBoard 清空重算。
-   *  坐标按产出环节的画布尺寸归一化到 1280×720，跨环节对齐。 */
-  const whiteboardStrokes = computed<SlideStroke[]>(() => {
-    const out: SlideStroke[] = []
-    const secs = sections.value
-    const CANVAS_W = 1280
-    const CANVAS_H = 720
-    for (let si = 0; si < secs.length; si++) {
-      const s = secs[si]
-      if (!s) continue
-      if (si > currentIndex.value) break
-      if (s.type !== 'slide' || s.status !== 'done') continue
-      const steps = Array.isArray(s.steps) ? s.steps : []
-      const limit = si === currentIndex.value ? stepIndex.value : steps.length - 1
-      const c = s.content as SlideContent | null
-      const cw = c?.width && c.width > 0 ? c.width : 1280
-      const ch = c?.height && c.height > 0 ? c.height : 720
-      const sx = CANVAS_W / cw
-      const sy = CANVAS_H / ch
-      for (let j = 0; j <= limit; j++) {
-        for (const a of steps[j]?.actions ?? []) {
-          if (a.type === 'clearBoard') {
-            out.length = 0
-          } else if (a.type === 'draw' && a.drawing) {
-            out.push({ order: si * 1000 + j, drawing: renormalizeDrawing(a.drawing, sx, sy) })
-          }
-        }
-      }
-    }
-    return out
-  })
-
-  function renormalizeDrawing(d: SlideDrawing, sx: number, sy: number): SlideDrawing {
-    if (sx === 1 && sy === 1) return d
-    const scalePoints = (pts?: [number, number][]) =>
-      pts?.map(([px, py]) => [px * sx, py * sy] as [number, number])
-    return {
-      ...d,
-      points: scalePoints(d.points),
-      x: d.x !== undefined ? d.x * sx : undefined,
-      y: d.y !== undefined ? d.y * sy : undefined,
-      width: d.width !== undefined ? d.width * sx : undefined,
-      height: d.height !== undefined ? d.height * sy : undefined,
-    }
-  }
+   *  坐标按产出环节的画布尺寸归一化到 1280×720，跨环节对齐（纯函数见 learnStrokes.ts）。 */
+  const whiteboardStrokes = computed<SlideStroke[]>(() =>
+    collectReplayStrokes(sections.value as unknown as ReplaySection[], currentIndex.value, stepIndex.value),
+  )
 
   const questionCount = computed(() => currentSection.value?.questions.length ?? 0)
   const demoSectionContent = computed(() =>
@@ -192,10 +155,7 @@ export const useLearnStore = defineStore('learn', () => {
     stopAutoPlay()
     currentIndex.value = 0
     lastVisitedIndex.value = 0
-    stepIndex.value = 0
-    quizAnswers.value = {}
-    quizSubmitted.value = false
-    demoEditing.value = false
+    resetSectionLocalState()
   }
 
   /** 当前请求过的最大环节索引（用于离开时判定是否学完全程） */
@@ -203,24 +163,73 @@ export const useLearnStore = defineStore('learn', () => {
     return sections.value.length > 0 && lastVisitedIndex.value >= sections.value.length - 1
   }
 
-  async function goTo(index: number) {
+  // ---- 导航锁定（讨论模式） ----
+  // 锁定后：手动导航（goTo/nextStep/prevStep）一律拒绝；
+  // 智能体驱动的 jumpToSection 是唯一能移动位置的通道。
+
+  /** 是否锁定手动导航（讨论模式激活期间为 true）。 */
+  const sectionLocked = ref(false)
+
+  function setSectionLocked(v: boolean) {
+    sectionLocked.value = v
+  }
+
+  /** 讨论模式进入前调用：原子地停掉自动播放并输出 {sectionIndex, stepIndex} 快照。 */
+  function pausePlayback(): { index: number; stepIndex: number } {
     stopAutoPlay()
-    const clamped = Math.min(Math.max(index, 0), sections.value.length - 1)
-    if (clamped === currentIndex.value) return
+    return { index: currentIndex.value, stepIndex: stepIndex.value }
+  }
+
+  /** 讨论模式退出后恢复快照位置（不重置 quiz/demo 作答状态）。 */
+  function restorePlayback(snap: { index: number; stepIndex: number }) {
+    stopAutoPlay()
+    const clamped = Math.min(Math.max(snap.index, 0), sections.value.length - 1)
     currentIndex.value = clamped
-    lastVisitedIndex.value = Math.max(lastVisitedIndex.value, clamped)
+    stepIndex.value = Math.max(0, snap.stepIndex)
+  }
+
+  /** 集中的环节局部状态重置（切环节 / 整体 reset 时调用）。 */
+  function resetSectionLocalState() {
     stepIndex.value = 0
     quizAnswers.value = {}
     quizSubmitted.value = false
     demoEditing.value = false
+    demoDraft.value = ''
+  }
+
+  async function goTo(index: number): Promise<boolean> {
+    // 讨论模式期间手动导航被代理接管，组件层调用应被拒绝
+    if (sectionLocked.value) return false
+    const clamped = clampIndex(index)
+    if (clamped === currentIndex.value) return true
+    stopAutoPlay()
+    currentIndex.value = clamped
+    lastVisitedIndex.value = Math.max(lastVisitedIndex.value, clamped)
+    resetSectionLocalState()
+    return true
+  }
+
+  /** agent 驱动的环节跳转（讨论模式 jump_to_section 动作）：绕过手动导航锁。 */
+  function jumpToSection(index: number) {
+    const clamped = clampIndex(index)
+    if (clamped === currentIndex.value) return
+    stopAutoPlay()
+    currentIndex.value = clamped
+    lastVisitedIndex.value = Math.max(lastVisitedIndex.value, clamped)
+  }
+
+  function clampIndex(index: number): number {
+    return Math.min(Math.max(index, 0), sections.value.length - 1)
   }
 
   function nextStep() {
+    if (sectionLocked.value) return
     stopAutoPlay()
     if (stepIndex.value < stepCount.value - 1) stepIndex.value += 1
   }
 
   function prevStep() {
+    if (sectionLocked.value) return
     stopAutoPlay()
     if (stepIndex.value > 0) stepIndex.value -= 1
   }
@@ -333,6 +342,11 @@ export const useLearnStore = defineStore('learn', () => {
     demoEditing.value = true
   }
 
+  /** 编辑器草稿更新（组件经此入口写入，不直接绑定 store 内部状态）。 */
+  function setDemoDraft(code: string) {
+    demoDraft.value = code
+  }
+
   function cancelEditing() {
     demoEditing.value = false
   }
@@ -341,8 +355,13 @@ export const useLearnStore = defineStore('learn', () => {
     const section = currentSection.value
     if (!section || !demoEditing.value) return
     await learnApi.saveDemoCode(section.id, demoDraft.value)
-    if (section.content && learnApi.isDemoType(section.type)) {
-      ;(section.content as learnApi.DemoContent).code = demoDraft.value
+    // detail 树不可变更新（不再直接 mutate API 返回对象）
+    if (detail.value && learnApi.isDemoType(section.type)) {
+      const content = { ...(section.content as learnApi.DemoContent), code: demoDraft.value }
+      detail.value = {
+        ...detail.value,
+        sections: sections.value.map((s) => (s.id === section.id ? { ...s, content } : s)),
+      }
     }
     demoEditing.value = false
   }
@@ -351,76 +370,84 @@ export const useLearnStore = defineStore('learn', () => {
 
   /** 轮询内容生成进度：只合入各环节 status（不动导航/进度）；有环节新完成时重拉详情刷新产物。
    *  检测中断：无 generating 环节且持续无进展 → 自动续跑；超限转手动横幅。 */
+
+  /** 把一次状态快照合入 detail（不可变更新），返回是否出现新完成的环节。 */
+  function mergeSectionStatuses(cur: CourseLearnDetail, secs: courseApi.GenerationSection[]): boolean {
+    const fresh = new Map(secs.map((s) => [s.id, s]))
+    const prevDone = new Set(cur.sections.filter((s) => s.status === 'done').map((s) => s.id))
+    let nowDoneCount = 0
+    const merged = cur.sections.map((s) => {
+      const status = fresh.get(s.id)?.status ?? s.status
+      if (status === 'done') nowDoneCount += 1
+      return status !== s.status ? { ...s, status } : s
+    })
+    cur.sections = merged
+    generatedCount.value = nowDoneCount
+    return merged.some((s) => s.status === 'done' && !prevDone.has(s.id))
+  }
+
+  /** 中断检测与自动续跑；返回 true 表示已转手动横幅、轮询应停止。 */
+  async function checkStallOrResume(): Promise<boolean> {
+    const detailValue = detail.value
+    if (!detailValue) return true
+    if (detailValue.sections.some((s) => s.status === 'generating')) {
+      stallCount = 0
+      return false
+    }
+    if (++stallCount < CONTENT_STALL_LIMIT) return false
+    if (autoRetryCount.value < CONTENT_MAX_AUTO_RETRY) {
+      autoRetryCount.value += 1
+      stalled.value = false
+      try {
+        await courseApi.resumeGeneration(courseId.value)
+      } catch {
+        // 续跑失败下一轮重新计数
+      }
+      stallCount = 0
+      return false
+    }
+    stalled.value = true
+    return true // 停止自动重试，等待手动
+  }
+
+  /** 单次轮询：拉状态合入 → 新完成则重拉详情 → 完成即停 / 中断检测 → 下一轮。 */
+  const tick = async (): Promise<void> => {
+    genTimer = null
+    if (!courseId.value || !detail.value) return
+    const cur = detail.value
+
+    let secs: courseApi.GenerationSection[] | null = null
+    try {
+      secs = await courseApi.getSections(courseId.value)
+    } catch {
+      // 网络抖动：下一轮再试
+    }
+    if (detail.value !== cur) return
+    if (secs && mergeSectionStatuses(cur, secs)) {
+      // 有环节新完成 → 重拉详情获取最新产物（保留导航与进度）
+      try {
+        const fd = await learnApi.getCourseDetail(courseId.value)
+        if (detail.value === cur) cur.sections = fd.sections
+      } catch {
+        // 下轮轮询带回新 status
+      }
+    }
+
+    // 完成即停
+    if (detail.value && detail.value.sections.every((s) => s.status === 'done')) {
+      generatedCount.value = detail.value.sections.length
+      return
+    }
+
+    // 停止条件：检测异常或转手动横幅
+    if (await checkStallOrResume()) return
+    genTimer = setTimeout(tick, CONTENT_POLL_INTERVAL_MS)
+  }
+
   function startGenPolling() {
     if (genTimer !== null) return
     stalled.value = false
     stallCount = 0
-
-    const tick = async () => {
-      genTimer = null
-      if (!courseId.value || !detail.value) return
-      const cur = detail.value
-
-      let secs: courseApi.GenerationSection[] | null = null
-      try {
-        secs = await courseApi.getSections(courseId.value)
-      } catch {
-        // 网络抖动：下一轮再试
-      }
-      if (detail.value !== cur) return
-      if (secs) {
-        const fresh = new Map(secs.map((s) => [s.id, s]))
-        const prevDone = new Set(cur.sections.filter((s) => s.status === 'done').map((s) => s.id))
-        let nowDoneCount = 0
-        cur.sections = cur.sections.map((s) => {
-          const freshSec = fresh.get(s.id)
-          const status = freshSec?.status ?? s.status
-          if (status === 'done') nowDoneCount += 1
-          if (status !== s.status) return { ...s, status }
-          return s
-        })
-        generatedCount.value = nowDoneCount
-
-        // 有环节新完成 → 重拉详情获取最新产物（保留导航与进度）
-        const newDone = cur.sections.some(
-          (s) => s.status === 'done' && !prevDone.has(s.id),
-        )
-        if (newDone) {
-          try {
-            const fd = await learnApi.getCourseDetail(courseId.value)
-            if (detail.value === cur) cur.sections = fd.sections
-          } catch {
-            // 下轮轮询带回新 status
-          }
-        }
-      }
-
-      // 完成即停
-      if (detail.value && detail.value.sections.every((s) => s.status === 'done')) {
-        generatedCount.value = detail.value.sections.length
-        return
-      }
-
-      // 中断检测：无 generating 环节且持续无进展 → 自动续跑
-      if (detail.value.sections.some((s) => s.status === 'generating')) {
-        stallCount = 0
-      } else if (++stallCount >= CONTENT_STALL_LIMIT) {
-        if (autoRetryCount.value < CONTENT_MAX_AUTO_RETRY) {
-          autoRetryCount.value += 1
-          stalled.value = false
-          try {
-            await courseApi.resumeGeneration(courseId.value)
-          } catch {
-            // 续跑失败下一轮重新计数
-          }
-          stallCount = 0
-        } else {
-          stalled.value = true
-          return // 停止自动重试，等待手动
-        }
-      }
-      genTimer = setTimeout(tick, CONTENT_POLL_INTERVAL_MS)
-    }
     genTimer = setTimeout(tick, CONTENT_POLL_INTERVAL_MS)
   }
 
@@ -492,6 +519,11 @@ export const useLearnStore = defineStore('learn', () => {
     playRate,
     hasPrevSection,
     hasNextSection,
+    sectionLocked,
+    setSectionLocked,
+    pausePlayback,
+    restorePlayback,
+    jumpToSection,
     reachedLast,
     load,
     goTo,
@@ -507,6 +539,7 @@ export const useLearnStore = defineStore('learn', () => {
     verdict,
     correctCount,
     startEditing,
+    setDemoDraft,
     cancelEditing,
     saveDemo,
     markProgress,

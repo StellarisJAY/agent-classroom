@@ -18,9 +18,11 @@ import type {
   SlideTextElement,
 } from '@/api/learn'
 import { useLearnStore } from '@/stores/learn'
+import { useDiscussionStore } from '@/stores/discussion'
 import WhiteboardLayer from '@/components/learn/WhiteboardLayer.vue'
 
 const store = useLearnStore()
+const discussion = useDiscussionStore()
 
 const content = computed<SlideContent | null>(() => store.slideContent)
 
@@ -551,10 +553,13 @@ function measureOverlays() {
   const canvasEl = canvasRef.value
   const step = store.currentStep
   overlays.value = []
-  if (!canvasEl || !step?.actions?.length) return
+  if (!canvasEl) return
+  // 步骤动作 + 讨论模式叠加动作合并渲染（讨论动作随事件实时出现）
+  const actions = [...(step?.actions ?? []), ...discussion.overlayActions]
+  if (!actions.length) return
   const base = canvasEl.getBoundingClientRect()
   const list: OverlayRect[] = []
-  for (const action of step.actions) {
+  for (const action of actions) {
     // laser：目标元素中心（或画布坐标）画一个红点，仅当前步骤瞬时显示
     if (action.type === 'laser') {
       const size = LASER_SIZE * scale.value
@@ -635,6 +640,15 @@ onBeforeUnmount(() => {
   plotEntries.clear()
   plotRefs.clear()
 })
+
+// 讨论叠加动作变化后重新测量（jump/高亮动作实时落位）
+watch(
+  () => discussion.overlayActions.map((a) => `${a.type}:${a.targetElementId ?? ''}`).join('|'),
+  async () => {
+    await nextTick()
+    measureOverlays()
+  },
+)
 
 watch([() => store.stepIndex, () => store.currentIndex], async () => {
   await nextTick()
@@ -758,7 +772,7 @@ watch([() => store.stepIndex, () => store.currentIndex], async () => {
         />
 
         <!-- 电子白板遮罩层：三视图（slide 隐藏 / overlay 透明 / board 白底），
-             实际白板内容为声明式笔画回放 -->
+             实际白板内容为声明式笔画回放；讨论侧板另有独立叠加层（不混回放流） -->
         <whiteboard-layer
           :strokes="store.whiteboardStrokes"
           :view="store.manualView"
@@ -766,6 +780,7 @@ watch([() => store.stepIndex, () => store.currentIndex], async () => {
           :canvas-width="content.width"
           :canvas-height="content.height"
           :scale="scale"
+          :overlay-strokes="discussion.overlayStrokes"
         />
       </div>
     </div>

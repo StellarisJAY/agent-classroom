@@ -57,7 +57,7 @@ function optionState(q: Question, i: number) {
             :class="`is-${optionState(q, oi).mark}`"
             :role="q.type === 'single' ? 'radio' : 'checkbox'"
             :aria-checked="store.isSelected(q.id, oi)"
-            :disabled="store.quizSubmitted"
+            :disabled="store.quizSubmitted || store.sectionLocked"
             :data-opt="store.quizSubmitted ? 'reveal' : undefined"
             :data-correct="optionState(q, oi).correct ? '1' : undefined"
             @click="store.toggleOption(q.id, oi)"

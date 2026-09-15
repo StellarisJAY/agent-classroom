@@ -295,18 +295,9 @@ export interface ChatMessage {
   created_at: string
 }
 
-// ---- 接口签名（后端就位后替换实现）----
+// 问答流式通道已迁至 api/discussion.ts（SSE 单流 agent loop）。
 
-export interface AskQuestionInput {
-  content: string
-  /** 提问来源环节，可空 */
-  section_id?: string | null
-}
-
-/** 增量回调，真实实现由 SSE 驱动，mock 用计时器驱动 */
-export type StreamCallback = (delta: string) => void
-
-// 说明：以下函数目前委托 learn.mock 提供的状态 + 模拟延时/流式，
+// 说明：以下函数目前委托 learn.mock 提供的状态 + 模拟延时，
 // 保持与真实后端一致的异步与增量语义。后端接口就位后，仅需把函数体
 // 换成 axios / fetch（SSE 读取），签名与调用方不变。
 
@@ -331,23 +322,10 @@ export async function getCourseDetail(courseId: string): Promise<CourseLearnDeta
   return detail
 }
 
-/** 拉取课程级问答历史 */
+/** 拉取课程级问答历史（后端接口就位后替换为真实查询） */
 export async function listMessages(courseId: string): Promise<ChatMessage[]> {
   await delay(150)
   return mock.listMessages(courseId)
-}
-
-/** 提问并流式返回老师回复，逐片回调 onDelta */
-export async function askQuestion(
-  courseId: string,
-  input: AskQuestionInput,
-  onDelta: StreamCallback,
-): Promise<void> {
-  const reply = mock.buildAssistantReply(input.content, input.section_id ?? null)
-  for (const chunk of splitChunks(reply, 4)) {
-    onDelta(chunk)
-    await delay(24)
-  }
 }
 
 /** 上报学习进度 */
@@ -369,11 +347,4 @@ function delay(ms: number): Promise<void> {
 /** 判定某环节 content 是否为有效 demo 内容（含 code）。 */
 function isDemoContent(content: SectionLearn['content']): content is DemoContent {
   return !!content && typeof content === 'object' && 'code' in content
-}
-
-function splitChunks(text: string, size: number): string[] {
-  if (!text) return ['']
-  const chunks: string[] = []
-  for (let i = 0; i < text.length; i += size) chunks.push(text.slice(i, i + size))
-  return chunks
 }

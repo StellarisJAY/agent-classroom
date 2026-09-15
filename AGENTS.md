@@ -81,12 +81,15 @@ web/
     ├── App.vue
     ├── router/index.ts             # 路由：/login、/（课程列表）、/create、
     │                               # /course/:id/learn、/preview/:id
-    ├── api/                        # HTTP 层：http.ts（fetch 封装）、error.ts、token.ts
+    ├── api/                        # HTTP 层：http.ts（axios 封装）、error.ts、token.ts
     │   ├── auth.ts / model-config.ts / course.ts
-    │   ├── learn.ts                # 学习页接口（demo/问答未就绪部分由 learn.mock.ts 兜底）
+    │   ├── learn.ts                # 学习页接口（demo 未就绪部分由 learn.mock.ts 兜底）
+    │   ├── discussion.ts           # 讨论模式 SSE 单流接口（mock 流由 discussion.mock.ts 驱动）
+    │   ├── sse.ts                  # 通用 SSE 消费器（fetch + ReadableStream 帧解析）
     │   └── types.ts                # 后端响应类型定义
     ├── stores/                     # Pinia：auth / course / generation / learn /
-    │                               # conversation / model-config / theme
+    │                               # conversation / discussion（讨论模式状态机）/
+    │                               # learnStrokes（白板笔画纯函数派生）/ model-config / theme
     ├── views/                      # 页面：LoginView、CourseListView、CreateView、
     │                               # GenerateView（SSE 生成进度）、LearnView
     ├── layouts/                    # MainLayout / GenerateLayout / LearnLayout
@@ -95,7 +98,9 @@ web/
     │   ├── course/                 # 课程卡片 / 筛选 / 网格
     │   ├── generate/               # 大纲列表、环节生成进度
     │   └── learn/                  # 学习页：StageSlide/StageQuiz/StageDemo 三类环节、
-    │                               # ChatPanel（问答）、TeacherBar、SectionDrawer 等
+    │                               # ChatPanel（问答壳，拆出 ChatMessages/ChatComposer 复用）、
+    │                               # DiscussionPanel（讨论侧板）、WhiteboardLayer（含讨论叠加层）、
+    │                               # TeacherBar（讨论中切换终止按钮）、SectionDrawer 等
     ├── theme/                      # 设计 token + Naive UI themeOverrides（浅/深色）
     └── __tests__/                  # vitest 单元测试
 ```

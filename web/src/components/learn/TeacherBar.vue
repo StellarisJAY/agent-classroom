@@ -10,10 +10,12 @@ import {
 
 import { useIsMobile } from '@/composables/useBreakpoint'
 import { useConversationStore } from '@/stores/conversation'
+import { useDiscussionStore } from '@/stores/discussion'
 import { useLearnStore } from '@/stores/learn'
 
 const store = useLearnStore()
 const chat = useConversationStore()
+const discussion = useDiscussionStore()
 const isMobile = useIsMobile()
 
 // 常驻旁白：slide 显示当前步骤讲解；quiz/demo 显示引导文案（quiz 不泄露答案）
@@ -34,7 +36,6 @@ const narration = computed<string>(() => {
 // 竖屏：旁白默认两行截断，点按展开/收起（换行后重置）
 const clamped = ref(isMobile.value)
 const expanded = ref(false)
-const isExpanded = computed(() => clamped.value && expanded.value)
 
 function toggleExpand() {
   expanded.value = !expanded.value
@@ -102,7 +103,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="teacher-bar__actions">
-      <n-tooltip v-if="store.isSlide && narration" placement="top">
+      <n-tooltip v-if="store.isSlide && narration && !discussion.active" placement="top">
         <template #trigger>
           <n-button
             quaternary
@@ -119,7 +120,16 @@ onBeforeUnmount(() => {
         语音朗读将在后续版本提供（本期占位）
       </n-tooltip>
 
-      <n-button type="primary" @click="chat.openPanel()">
+      <!-- 讨论中：旁白切换为"讨论中"提示 + 终止讨论（回到讲解） -->
+      <template v-if="discussion.active">
+        <span class="teacher-bar__discussing" role="status">
+          {{ discussion.streaming ? '老师正在讲解…' : '提问打断讲解…' }}
+        </span>
+        <n-button type="warning" size="small" @click="discussion.stop()">
+          终止讨论
+        </n-button>
+      </template>
+      <n-button v-else type="primary" @click="chat.openPanel()">
         <template #icon>
           <n-icon><ChatbubbleEllipsesOutline /></n-icon>
         </template>
@@ -208,6 +218,13 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.teacher-bar__discussing {
+  flex: none;
+  font-size: 12px;
+  color: var(--app-primary, #14b8a6);
+  white-space: nowrap;
 }
 .is-muted {
   color: var(--app-text-2, #64748b);

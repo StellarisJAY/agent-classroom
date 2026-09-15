@@ -7,16 +7,25 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import type { SlideDrawSize, SlideDrawing, SlideStroke, SlideView } from '@/api/learn'
 
-const props = defineProps<{
-  strokes: SlideStroke[]
-  view: SlideView
-  accent: string
-  /** 画布逻辑尺寸（坐标系统一为 1280×720，由 store 归一化） */
-  canvasWidth: number
-  canvasHeight: number
-  /** 画布的展示缩放比（逻辑坐标 → 屏幕px） */
-  scale: number
-}>()
+const props = withDefaults(
+  defineProps<{
+    strokes: SlideStroke[]
+    view: SlideView
+    accent: string
+    /** 画布逻辑尺寸（坐标系统一为 1280×720，由调用方归一化） */
+    canvasWidth: number
+    canvasHeight: number
+    /** 画布的展示缩放比（逻辑坐标 → 屏幕px） */
+    scale: number
+    /**
+     * 讨论模式叠加笔画：独立于正式回放流（不参与逐笔浮现动画与 lastBaseCount
+     * 基准）、不写入 whiteboardStrokes 回放序列；讨论结束时整层清空。
+     * 为空/未传时不渲染叠加画布。
+     */
+    overlayStrokes?: SlideStroke[]
+  }>(),
+  { overlayStrokes: () => [] },
+)
 
 /** 各笔画粗细的绘制线宽（逻辑坐标 px，随 scale 放大） */
 const SIZES: Record<SlideDrawSize, number> = { thin: 2, medium: 4, thick: 6 }
@@ -24,6 +33,7 @@ const SIZES: Record<SlideDrawSize, number> = { thin: 2, medium: 4, thick: 6 }
 const STROKE_DELAY_MS = 180
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
+const overlayCanvasRef = ref<HTMLCanvasElement | null>(null)
 
 /** 当前实际绘制的笔画数（重放全量与逐笔动画 Visibility 合成后的切片） */
 const visibleCount = ref(0)
@@ -213,6 +223,13 @@ watch(
   () => props.strokes,
   () => redraw(),
 )
+// 讨论模式叠加层：声明式整层重绘（无动画、无基准 hack），变化即全量呈现；
+// post 保证叠加画布 v-if 挂载完成后再绘制
+watch(
+  () => props.overlayStrokes,
+  () => paintOverlay(),
+  { flush: 'post' },
+)
 watch(
   () => props.view,
   (v) => {
@@ -220,17 +237,48 @@ watch(
     lastBaseCount = 0
     visibleCount.value = v === 'slide' ? 0 : props.strokes.length
     paint(0, visibleCount.value)
+    paintOverlay()
   },
 )
 // 尺寸/缩放变化重绘（切环节、窗口 resize 时）
 watch(
   () => [props.canvasWidth, props.canvasHeight, props.scale],
-  () => paint(0, visibleCount.value),
+  () => {
+    paint(0, visibleCount.value)
+    paintOverlay()
+  },
 )
+
+/** 叠加层整层重绘：只画 overlayStrokes，不叠任何背景与动画。 */
+function paintOverlay() {
+  const cv = overlayCanvasRef.value
+  if (!cv) return
+  const ctx = cv.getContext('2d')
+  if (!ctx) return
+  const dp = window.devicePixelRatio || 1
+  const w = displaySize.value.w
+  const h = displaySize.value.h
+  if (cv.width !== Math.round(w * dp) || cv.height !== Math.round(h * dp)) {
+    cv.width = Math.round(w * dp)
+    cv.height = Math.round(h * dp)
+  }
+  ctx.setTransform(dp, 0, 0, dp, 0, 0)
+  ctx.clearRect(0, 0, w, h)
+  if (props.view === 'slide') return
+  for (const s of props.overlayStrokes) {
+    drawStroke(ctx, s.drawing)
+  }
+}
 
 onBeforeUnmount(stopAnim)
 
-defineExpose({ repaint: () => paint(0, visibleCount.value) })
+defineExpose({
+  repaint: () => {
+    paint(0, visibleCount.value)
+    paintOverlay()
+  },
+})
+
 </script>
 <template>
   <div
@@ -239,6 +287,13 @@ defineExpose({ repaint: () => paint(0, visibleCount.value) })
     :style="{ width: `${displaySize.w}px`, height: `${displaySize.h}px` }"
   >
     <canvas ref="canvasRef" class="whiteboard-layer__canvas" :style="displaySize" />
+    <canvas
+      v-if="overlayStrokes.length"
+      ref="overlayCanvasRef"
+      class="whiteboard-layer__canvas whiteboard-layer__overlay"
+      :style="displaySize"
+      aria-label="讨论模式手绘叠加层"
+    />
   </div>
 </template>
 
@@ -254,5 +309,9 @@ defineExpose({ repaint: () => paint(0, visibleCount.value) })
 }
 .whiteboard-layer__canvas {
   display: block;
+}
+.whiteboard-layer__overlay {
+  position: absolute;
+  inset: 0;
 }
 </style>

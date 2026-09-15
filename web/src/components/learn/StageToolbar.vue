@@ -148,7 +148,7 @@ const VIEW_ICONS: { view: SlideView; icon: typeof ReaderOutline; tip: string }[]
       <n-button
         quaternary
         size="small"
-        :disabled="!store.hasPrevSection"
+        :disabled="!store.hasPrevSection || store.sectionLocked"
         data-mobile-icon-only
         @click="store.goTo(store.currentIndex - 1)"
       >
@@ -165,7 +165,7 @@ const VIEW_ICONS: { view: SlideView; icon: typeof ReaderOutline; tip: string }[]
       <n-button
         quaternary
         size="small"
-        :disabled="!store.hasNextSection"
+        :disabled="!store.hasNextSection || store.sectionLocked"
         data-mobile-icon-only
         @click="store.goTo(store.currentIndex + 1)"
       >

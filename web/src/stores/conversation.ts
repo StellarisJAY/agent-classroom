@@ -25,6 +25,9 @@ export const useConversationStore = defineStore('conversation', () => {
 
   const lastMessage = computed(() => messages.value[messages.value.length - 1] ?? null)
 
+  /** 讨论模式面板展示的"讨论流中断"提示（讨论 store 写入，面板展示后清除）。 */
+  const streamError = ref('')
+
   async function init(id: string) {
     courseId.value = id
     loading.value = true
@@ -36,40 +39,7 @@ export const useConversationStore = defineStore('conversation', () => {
     }
   }
 
-  async function ask(input: { content: string; section_id?: string | null }) {
-    if (!courseId.value || streaming.value) return
-    if (!initialized.value) await init(courseId.value)
-
-    const user: ChatMessage = {
-      id: uid(),
-      role: MessageRole.User,
-      content: input.content,
-      section_id: input.section_id ?? null,
-      created_at: new Date().toISOString(),
-    }
-    messages.value.push(user)
-
-    open.value = true
-    streaming.value = true
-    streamContent.value = ''
-    try {
-      await learnApi.askQuestion(courseId.value, input, (delta) => {
-        streamContent.value += delta
-      })
-    } finally {
-      if (streamContent.value) {
-        messages.value.push({
-          id: uid(),
-          role: MessageRole.Assistant,
-          content: streamContent.value,
-          section_id: input.section_id ?? null,
-          created_at: new Date().toISOString(),
-        })
-      }
-      streamContent.value = ''
-      streaming.value = false
-    }
-  }
+  // ---- 讨论模式写入通道（discussion store 落库用；提问入口统一在 discussion.start） ----
 
   function openPanel() {
     open.value = true
@@ -77,6 +47,38 @@ export const useConversationStore = defineStore('conversation', () => {
 
   function closePanel() {
     open.value = false
+  }
+
+  // ---- 讨论模式写入通道（discussion store 落库用；提问入口统一为 discussion.start） ----
+
+  /** 乐观插入一条用户消息（提问即入会话历史）。 */
+  function pushUserMessage(content: string, sectionId: string | null): void {
+    messages.value.push({
+      id: uid(),
+      role: MessageRole.User,
+      content,
+      section_id: sectionId,
+      created_at: new Date().toISOString(),
+    })
+  }
+
+  /** 把一轮回复的完整文本落地为 assistant 消息。 */
+  function appendAssistantMessage(content: string, sectionId: string | null): void {
+    messages.value.push({
+      id: uid(),
+      role: MessageRole.Assistant,
+      content,
+      section_id: sectionId,
+      created_at: new Date().toISOString(),
+    })
+  }
+
+  function setStreamError(err: unknown): void {
+    streamError.value = err instanceof Error ? err.message : '讨论流中断，请重新提问'
+  }
+
+  function clearStreamError(): void {
+    streamError.value = ''
   }
 
   function reset() {
@@ -96,11 +98,15 @@ export const useConversationStore = defineStore('conversation', () => {
     open,
     streaming,
     streamContent,
+    streamError,
     lastMessage,
     init,
-    ask,
     openPanel,
     closePanel,
+    pushUserMessage,
+    appendAssistantMessage,
+    setStreamError,
+    clearStreamError,
     reset,
   }
 })
