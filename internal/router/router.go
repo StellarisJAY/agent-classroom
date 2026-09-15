@@ -16,7 +16,7 @@ import (
 )
 
 // Register 挂载全局中间件并注册路由分组。
-func Register(e *gin.Engine, cfg *config.Config, logger *slog.Logger, auth *handler.AuthHandler, modelConfig *handler.ModelConfigHandler, course *handler.CourseHandler, section *handler.SectionHandler, storage types.Storage) {
+func Register(e *gin.Engine, cfg *config.Config, logger *slog.Logger, auth *handler.AuthHandler, modelConfig *handler.ModelConfigHandler, course *handler.CourseHandler, section *handler.SectionHandler, discussion *handler.DiscussionHandler, storage types.Storage) {
 	// 全局中间件
 	e.Use(
 		middleware.Recovery(logger),
@@ -34,11 +34,11 @@ func Register(e *gin.Engine, cfg *config.Config, logger *slog.Logger, auth *hand
 
 	// API 根分组
 	api := e.Group("/api")
-	registerAPI(api, cfg, auth, modelConfig, course, section)
+	registerAPI(api, cfg, auth, modelConfig, course, section, discussion)
 }
 
 // registerAPI 集中注册所有业务路由分组。
-func registerAPI(api *gin.RouterGroup, cfg *config.Config, auth *handler.AuthHandler, modelConfig *handler.ModelConfigHandler, course *handler.CourseHandler, section *handler.SectionHandler) {
+func registerAPI(api *gin.RouterGroup, cfg *config.Config, auth *handler.AuthHandler, modelConfig *handler.ModelConfigHandler, course *handler.CourseHandler, section *handler.SectionHandler, discussion *handler.DiscussionHandler) {
 	authGroup := api.Group("/auth")
 	{
 		authGroup.POST("/register", auth.Register)
@@ -69,6 +69,9 @@ func registerAPI(api *gin.RouterGroup, cfg *config.Config, auth *handler.AuthHan
 		courseGroup.GET("/:id/sections", section.List)
 		courseGroup.POST("/:id/generate/resume", section.Generate)
 		courseGroup.GET("/:id/learn", section.Learn)
+		// 讨论模式：提问（SSE 单流 agent loop）与课程级问答历史。
+		courseGroup.POST("/:id/questions", discussion.AskQuestion)
+		courseGroup.GET("/:id/conversation", discussion.ListConversation)
 	}
 }
 

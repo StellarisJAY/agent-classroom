@@ -96,3 +96,11 @@ var demoBasicUserTpl = template.Must(template.New("demo_basic_user").Parse(demoB
 //
 //go:embed templates/demo_basic.html
 var demoBasicTemplate string
+
+// ---- 讨论模式（环节问答智能体老师） ----
+
+// discussionSystemPrompt 讨论模式的 system 提示词（老师人设 / 工具使用规则 /
+// 上下文注入约定 / quiz 防露答案补充指令）。
+//
+//go:embed prompts/discussion.md
+var discussionSystemPrompt string

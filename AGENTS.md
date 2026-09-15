@@ -29,6 +29,7 @@ agent-classroom/
 │   │   ├── slide.go                # Slide 内容数据结构
 │   │   ├── question.go             # 测试题实体 + QuestionRepo
 │   │   ├── document.go             # 参考文档 + DocumentRepo
+│   │   ├── conversation.go         # 问答会话 Conversation/Message + Repo + DiscussionService/Sink
 │   │   └── learn.go                # 学习进度 / 问答会话相关
 │   ├── agent/                      # 统一 agent loop 封装（仅依赖 model；工具定义+执行器、
 │   │                               # 业务装配上下文、轮次上限强制收尾、逐条消息回调）
@@ -37,6 +38,8 @@ agent-classroom/
 │   │   │   ├── generator_slide.go  # Slide 环节生成
 │   │   │   ├── generator_quiz.go   # 测试题生成
 │   │   │   ├── generator_demo.go   # 互动演示生成（HTML 模板拼接 + CSP 禁网络）
+│   │   │   ├── discussion.go       # 讨论模式：上下文装配 + agent loop 驱动 + 消息落库
+│   │   │   ├── discussion_tools.go # 讨论模式工具 schema 定义与按环节类型裁剪
 │   │   │   ├── prompt.go           # go:embed 引入 prompts/ 下的提示词
 │   │   │   ├── prompts/            # LLM 提示词模板（.md，随二进制嵌入）
 │   │   │   └── templates/          # 演示环节 HTML 骨架模板
@@ -53,7 +56,9 @@ agent-classroom/
 │   │   └── tts/                    # 预留：TTS 适配器（暂无实现）
 │   ├── storage/                    # 对象存储实现（local / minio），实现 types.Storage
 │   ├── handler/                    # HTTP 层：解析请求 → 调 service → 统一响应
-│   │   └── response.go             # 统一响应封装 + bind/校验 helper
+│   │   ├── response.go             # 统一响应封装 + bind/校验 helper
+│   │   ├── sse.go                  # SSE 写出器（事件帧 + Flush + 心跳保活，讨论模式用）
+│   │   └── discussion.go           # 讨论模式：提问 SSE 流 + 问答历史
 │   ├── router/
 │   │   └── router.go               # 路由分组注册 + 中间件挂载 + /uploads 存储代理
 │   ├── middleware/                 # auth(JWT) / cors / recovery / logger / context(用户身份)
@@ -145,6 +150,13 @@ web/
 | 生成进度推送 | SSE |
 | 测试 / 检查 | vitest + vue-tsc + eslint/oxlint |
 | 包管理 | pnpm |
+
+## 后端编码风格约定
+
+- 使用go 1.26版本的新语法风格，比如any替换interface{}、标准库的min/max、"for i := range n"等。
+- 禁止手动字符串拼接：使用strings.Join,strings.Builder等工具拼接字符串，禁止用"+"拼接。
+- 使用switch-case简化if-else结构,对于只有枚举单一条件判断的分支逻辑使用switch-case使代码更加简洁。
+- 使用fmt.FPrintf: 向符合Writer接口的结构写入字符串时，使用fmt.FPrintf替代。
 
 ## 依赖注入约定
 

@@ -64,6 +64,8 @@ type Request struct {
 	Handler Handler
 	// Temperature 采样温度；nil 用模型默认。
 	Temperature *float64
+	// Thinking 思考限制（off / default / max；空串视为 default）。透传至模型请求。
+	Thinking string
 }
 
 // Run 驱动完整 agent loop：
@@ -101,6 +103,7 @@ func (r *Runner) Run(ctx context.Context, req Request) error {
 			Messages:    turnMsgs,
 			Tools:       turnTools,
 			Temperature: req.Temperature,
+			Thinking:    req.Thinking,
 		}, model.StreamHandler{
 			OnText: func(delta string) error {
 				text.WriteString(delta)

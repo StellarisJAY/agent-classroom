@@ -49,6 +49,14 @@ func Migrate(db *gorm.DB) error {
 		types.QuestionTypeSingle, types.QuestionTypeMultiple); err != nil {
 		return err
 	}
+	if err := ensureEnum(db, "message_role",
+		types.MessageRoleUser, types.MessageRoleAssistant, types.MessageRoleTool); err != nil {
+		return err
+	}
+	// 兼容已初始化过的旧库：message_role 原只含 user/assistant，讨论模式补 tool。
+	if err := ensureEnumValue(db, "message_role", types.MessageRoleTool); err != nil {
+		return err
+	}
 
 	if err := migrateCourseSchema(db); err != nil {
 		return err
@@ -56,7 +64,10 @@ func Migrate(db *gorm.DB) error {
 	if err := migrateSectionSchema(db); err != nil {
 		return err
 	}
-	return migrateQuestionSchema(db)
+	if err := migrateQuestionSchema(db); err != nil {
+		return err
+	}
+	return migrateConversationSchema(db)
 }
 
 // ensureEnum 幂等创建 PostgreSQL ENUM 类型。
@@ -261,6 +272,37 @@ func migrateQuestionSchema(db *gorm.DB) error {
 	for _, stmt := range stmts {
 		if err := db.Exec(stmt).Error; err != nil {
 			return fmt.Errorf("migrate question schema: %w", err)
+		}
+	}
+	return nil
+}
+
+// migrateConversationSchema 创建 conversation / message 表。对齐 docs/数据库设计.md 3.8 / 3.9
+//（message.content 按讨论模式方案 §6 采用 jsonb）。
+func migrateConversationSchema(db *gorm.DB) error {
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS conversation (
+			id        uuid PRIMARY KEY,
+			course_id uuid NOT NULL REFERENCES course(id) ON DELETE CASCADE,
+			user_id   uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			create_by uuid REFERENCES users(id) ON DELETE SET NULL,
+			create_at timestamptz NOT NULL DEFAULT now(),
+			update_at timestamptz NOT NULL DEFAULT now()
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uniq_conversation_course_user ON conversation (course_id, user_id)`,
+		`CREATE TABLE IF NOT EXISTS message (
+			id              uuid PRIMARY KEY,
+			conversation_id uuid NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+			role            message_role NOT NULL,
+			content         jsonb NOT NULL,
+			section_id      uuid REFERENCES section(id) ON DELETE SET NULL,
+			created_at      timestamptz NOT NULL DEFAULT now()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_message_conversation_created ON message (conversation_id, created_at)`,
+	}
+	for _, stmt := range stmts {
+		if err := db.Exec(stmt).Error; err != nil {
+			return fmt.Errorf("migrate conversation schema: %w", err)
 		}
 	}
 	return nil

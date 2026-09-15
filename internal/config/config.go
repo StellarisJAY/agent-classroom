@@ -150,7 +150,9 @@ func Load() (*Config, error) {
 	v.SetDefault("server.port", 8080)
 	v.SetDefault("server.mode", "debug")
 	v.SetDefault("server.read_timeout", 10*time.Second)
-	v.SetDefault("server.write_timeout", 30*time.Second)
+	// write_timeout 覆盖 SSE 连接：讨论模式单流 loop 最多 8 轮 LLM 流式调用，
+	// 默认取 15 分钟（远超 loop 时长上界）；如需收紧请评估讨论模式最长耗时。
+	v.SetDefault("server.write_timeout", 15*time.Minute)
 
 	v.SetDefault("database.host", "localhost")
 	v.SetDefault("database.port", 5432)

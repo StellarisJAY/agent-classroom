@@ -133,8 +133,13 @@ func NewApp(cfg *config.Config) (*App, error) {
 	sectionSvc := service.NewSectionService(courseRepo, outlineRepo, sectionRepo, questionRepo, store, documentRepo, objStorage, modelConfigSvc, modelRegistry, docLoader)
 	sectionHandler := handler.NewSectionHandler(sectionSvc)
 
+	// 讨论模式：课程级问答会话（agent loop 驱动）
+	conversationRepo := repo.NewConversationRepo(db)
+	discussionSvc := service.NewDiscussionService(courseRepo, sectionRepo, questionRepo, conversationRepo, modelConfigSvc, modelRegistry)
+	discussionHandler := handler.NewDiscussionHandler(discussionSvc)
+
 	e := gin.New()
-	router.Register(e, cfg, logger, authHandler, modelConfigHandler, courseHandler, sectionHandler, objStorage)
+	router.Register(e, cfg, logger, authHandler, modelConfigHandler, courseHandler, sectionHandler, discussionHandler, objStorage)
 
 	return &App{cfg: cfg, db: db, engine: e, logger: logger, modelRegistry: modelRegistry}, nil
 }

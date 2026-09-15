@@ -2,7 +2,8 @@ server:
   port: 8080
   mode: debug          # debug | release
   read_timeout: 10s
-  write_timeout: 30s
+  # 覆盖 SSE 连接（讨论模式单流 agent loop 最多 8 轮 LLM 调用）
+  write_timeout: 15m
 
 database:
   host: localhost
