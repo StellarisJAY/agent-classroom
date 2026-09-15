@@ -3,12 +3,14 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { renderToString } from 'katex'
 
 import type { ECharts } from 'echarts/core'
+import type { Chart, FunctionPlotOptions, FunctionPlotDatum } from 'function-plot'
 import type {
   SlideAction,
   SlideChartElement,
   SlideContent,
   SlideElement,
   SlideFormulaElement,
+  SlideFunctionPlotElement,
   SlideImageElement,
   SlideListElement,
   SlideMermaidElement,
@@ -139,6 +141,9 @@ function isMermaid(e: SlideElement): e is SlideMermaidElement {
 }
 function isChart(e: SlideElement): e is SlideChartElement {
   return e.type === 'chart'
+}
+function isFunctionPlot(e: SlideElement): e is SlideFunctionPlotElement {
+  return e.type === 'functionPlot'
 }
 
 // ---- mermaid 流程图渲染（动态导入，源码 → SVG 缓存） ----
@@ -381,11 +386,135 @@ function chartBox(el: SlideChartElement) {
   }
 }
 
-/** 内层图表按画布原始尺寸渲染，再整体缩放到目标尺寸（SVG 内容清晰缩放） */
+/** 内层图表按画布原始尺寸渲染，再整体缩放到目标尺寸（SVG 内容清晰缩放）。
+ * 缩放系数必须同时包含画布 fit 缩放（box 宽 = size.w × scale）与超出底边的裁剪比。 */
 function chartInner(el: SlideChartElement) {
   const c = content.value
   const size = c ? chartSize(el, c) : { w: el.width, h: el.height }
-  const s = el.width > 0 ? size.w / el.width : 1
+  const s = el.width > 0 ? (size.w * scale.value) / el.width : 1
+  return {
+    width: `${el.width}px`,
+    height: `${el.height}px`,
+    transform: `scale(${s})`,
+    transformOrigin: '0 0',
+  }
+}
+
+// ---- functionPlot 函数图像渲染（动态按需导入 function-plot，SVG 渲染，实例缓存） ----
+
+interface PlotEntry {
+  key: string
+  chart: Chart | null
+}
+
+type FunctionPlotFn = (options: FunctionPlotOptions) => Chart
+
+/** 动态加载 function-plot（CJS 产物）。Vite/esbuild interop 下 default 可能指向
+ * module.exports 本体或其 .default 导出，逐层解出真正可调用的绘图函数。 */
+async function loadFunctionPlot(): Promise<FunctionPlotFn> {
+  const mod = (await import('function-plot')) as { default?: unknown; [key: string]: unknown }
+  let fn = (mod?.default ?? mod) as unknown
+  if (typeof fn !== 'function') {
+    fn = (fn as { default?: unknown } | undefined)?.default
+  }
+  if (typeof fn !== 'function') {
+    throw new Error(
+      `cannot resolve functionPlot callable (exports: ${Object.keys(mod ?? {}).join(',')})`,
+    )
+  }
+  return fn as FunctionPlotFn
+}
+
+let functionPlotLoader: ReturnType<typeof loadFunctionPlot> | null = null
+
+function loadFunctionPlotOnce() {
+  functionPlotLoader ??= loadFunctionPlot()
+  return functionPlotLoader
+}
+
+/** 元素 id → 绘图实例（元素移除/数据变化时清空 reparent 容器） */
+const plotEntries = new Map<string, PlotEntry>()
+const plotRefs = new Map<string, HTMLElement>()
+
+function setPlotRef(id: string, node: unknown) {
+  if (node instanceof HTMLElement) plotRefs.set(id, node)
+  else plotRefs.delete(id)
+}
+
+async function renderFunctionPlot(el: SlideFunctionPlotElement, accent: string) {
+  const key = `${el.id}@${JSON.stringify({ ...el, id: '', x: 0, y: 0 })}`
+  const entry = plotEntries.get(el.id)
+  if (entry && entry.key === key) return
+  plotEntries.set(el.id, { key, chart: null })
+  try {
+    await nextTick()
+    const dom = plotRefs.get(el.id)
+    if (!dom) return
+    dom.innerHTML = ''
+    // 由封闭的声明字段确定性构建绘图配置（模型只给表达式与窗口），
+    // 禁用缩放/平移：slide 内为静态展示，避免与画布交互冲突。
+    const functionPlot = await loadFunctionPlotOnce()
+    const palette = chartPalette(accent)
+    const options: FunctionPlotOptions = {
+      target: dom,
+      width: el.width,
+      height: el.height,
+      title: el.title || undefined,
+      disableZoom: true,
+      grid: el.grid ?? false,
+      xAxis: { domain: clampDomain(el.xRange) },
+    }
+    if (el.yRange && el.yRange[0] < el.yRange[1]) {
+      options.yAxis = { domain: [el.yRange[0], el.yRange[1]] }
+    }
+    options.data = el.curves.map((c, i): FunctionPlotDatum => ({
+      fn: c.expression,
+      color: c.color || palette[i % palette.length],
+      attr: c.dash ? { 'stroke-dasharray': '6 4' } : {},
+    }))
+    const chart = functionPlot(options)
+    plotEntries.set(el.id, { key, chart })
+    await nextTick(measureOverlays)
+  } catch (e) {
+    // 渲染失败：保持 chart 为 null，元素不显示，不影响其余内容（与 chart/mermaid 一致）。
+    // 失败原因必须显形：前序实现静默吞错导致"整块不可见"无法定位，这里必须至少警告。
+    console.warn('[functionPlot] 渲染失败', e, el.id)
+  }
+}
+
+function clampDomain(r: [number, number]): [number, number] {
+  if (!r || !Number.isFinite(r[0]) || !Number.isFinite(r[1]) || r[0] >= r[1]) return [-6.5, 6.5]
+  return r
+}
+
+/** functionPlot 与 chart 同款定位：按画布底边等比缩放 */
+const PLOT_BOTTOM_MARGIN = 24
+
+function plotSize(el: SlideFunctionPlotElement, c: SlideContent): { w: number; h: number } {
+  const availW = Math.max(el.width, 0)
+  const availH = c.height - el.y - PLOT_BOTTOM_MARGIN
+  if (availW <= 0 || availH <= 0) return { w: availW, h: Math.min(el.height, Math.max(availH, 0)) }
+  const s = Math.min(availW / el.width, availH / el.height)
+  return { w: el.width * s, h: el.height * s }
+}
+
+function plotBox(el: SlideFunctionPlotElement) {
+  const c = content.value
+  const size = c ? plotSize(el, c) : { w: el.width, h: el.height }
+  return {
+    left: px(el.x),
+    top: px(el.y),
+    width: px(size.w),
+    height: px(size.h),
+  }
+}
+
+/** 内层绘图按画布原始尺寸渲染，再整体缩放到目标尺寸（SVG 内容清晰缩放）。
+ * 缩放系数与 chartInner 同源：画布 fit 缩放 × 底边裁剪比。 */
+function plotInner(el: SlideFunctionPlotElement) {
+  const c = content.value
+  const size = c ? plotSize(el, c) : { w: el.width, h: el.height }
+  const s = el.width > 0 ? (size.w * scale.value) / el.width : 1
   return {
     width: `${el.width}px`,
     height: `${el.height}px`,
@@ -494,6 +623,7 @@ watch(
     for (const el of c.elements) {
       if (isMermaid(el)) void renderMermaid(el)
       if (isChart(el)) void renderChart(el, c.accent)
+      if (isFunctionPlot(el)) void renderFunctionPlot(el, c.accent)
     }
   },
   { deep: true, immediate: true },
@@ -502,6 +632,8 @@ watch(
 onBeforeUnmount(() => {
   for (const entry of chartEntries.values()) entry.inst?.dispose()
   chartEntries.clear()
+  plotEntries.clear()
+  plotRefs.clear()
 })
 
 watch([() => store.stepIndex, () => store.currentIndex], async () => {
@@ -588,6 +720,15 @@ watch([() => store.stepIndex, () => store.currentIndex], async () => {
             :style="chartBox(el)"
           >
             <div :ref="(n) => setChartRef(el.id, n)" class="stage-el--chart-inner" :style="chartInner(el)" />
+          </div>
+
+          <div
+            v-else-if="isFunctionPlot(el)"
+            :ref="(n) => setRef(el.id, n)"
+            class="stage-el stage-el--function-plot"
+            :style="plotBox(el)"
+          >
+            <div :ref="(n) => setPlotRef(el.id, n)" class="stage-el--function-plot-inner" :style="plotInner(el)" />
           </div>
         </template>
 
@@ -731,6 +872,18 @@ watch([() => store.stepIndex, () => store.currentIndex], async () => {
   left: 0;
   top: 0;
   overflow: hidden;
+}
+.stage-el--function-plot {
+  overflow: hidden;
+}
+.stage-el--function-plot-inner {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+}
+.stage-el--function-plot-inner :deep(svg) {
+  display: block;
 }
 .stage-el--list-ol,
 .stage-el--list-ul {

@@ -5,11 +5,13 @@ import { PaperPlaneOutline } from '@vicons/ionicons5'
 
 import type { ChatMessage } from '@/api/learn'
 import { MessageRole } from '@/api/learn'
+import { useIsMobile } from '@/composables/useBreakpoint'
 import { useConversationStore } from '@/stores/conversation'
 import { useLearnStore } from '@/stores/learn'
 
 const chat = useConversationStore()
 const learn = useLearnStore()
+const isMobile = useIsMobile()
 
 const draft = ref('')
 const bodyEl = ref<HTMLElement | null>(null)
@@ -58,7 +60,7 @@ async function send() {
 <template>
   <n-drawer
     :show="chat.open"
-    :width="420"
+    :width="isMobile ? '100%' : 420"
     placement="right"
     :z-index="2000"
     @update:show="(v) => (v ? chat.openPanel() : chat.closePanel())"
@@ -219,9 +221,17 @@ async function send() {
   align-items: flex-end;
   gap: 8px;
   padding: 12px 16px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--app-divider, #e2e8f0);
 }
 .chat-panel__composer :deep(.n-input) {
   flex: 1;
+}
+
+/* ---------- 移动端：气泡占全宽比例更小屏友好 ---------- */
+@media (max-width: 768px) {
+  .chat-msg__bubble {
+    max-width: 88%;
+  }
 }
 </style>

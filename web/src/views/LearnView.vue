@@ -141,8 +141,7 @@ function retry() {
   font-size: 16px;
   font-weight: 600;
   color: var(--app-text-1, #0f172a);
-}
-.learn-view__progress {
+}.learn-view__progress {
   margin-left: auto;
   font-size: 12px;
   padding: 2px 10px;
@@ -220,5 +219,38 @@ function retry() {
   margin: 0;
   font-size: 14px;
   color: #b45309;
+}
+
+/* ---------- 移动端竖屏：压缩头部 + 舞台可滚动 ---------- */
+@media (max-width: 768px) {
+  .learn-view__header {
+    flex: 0 0 40px;
+    gap: 8px;
+    padding: 4px 8px;
+  }
+  .learn-view__title {
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .learn-view__progress {
+    flex: none;
+    font-size: 11px;
+    padding: 2px 8px;
+  }
+  .learn-view__stage {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .learn-view__stage-inner[data-type='slide'],
+  .learn-view__stage-inner[data-type='quiz'],
+  .learn-view__stage-inner[data-type^='demo_'] {
+    max-width: none;
+  }
+  .learn-view__stalled {
+    flex-wrap: wrap;
+    margin: 8px 8px 0;
+  }
 }
 </style>

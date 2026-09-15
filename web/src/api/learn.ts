@@ -140,6 +140,28 @@ export interface SlideChartElement {
   series: SlideChartSeries[]
 }
 
+/** functionPlot 曲线：expression 为纯数学表达式（后端白名单校验），color 缺省由 accent 色板分配 */
+export interface SlideFunctionPlotCurve {
+  expression: string
+  color?: string
+  dash?: boolean
+}
+
+export interface SlideFunctionPlotElement {
+  id: string
+  type: 'functionPlot'
+  x: number
+  y: number
+  width: number
+  height: number
+  /** 横/纵轴显示窗口；y 为 [0,0] 表示不自定纵轴范围（自适应） */
+  xRange: [number, number]
+  yRange?: [number, number]
+  grid?: boolean
+  title?: string
+  curves: SlideFunctionPlotCurve[]
+}
+
 export type SlideElement =
   | SlideTextElement
   | SlideFormulaElement
@@ -148,6 +170,7 @@ export type SlideElement =
   | SlideImageElement
   | SlideMermaidElement
   | SlideChartElement
+  | SlideFunctionPlotElement
 
 export interface SlideContent {
   width: number

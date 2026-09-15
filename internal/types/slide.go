@@ -15,6 +15,8 @@ const (
 
 	SlideElementMermaid = "mermaid"
 	SlideElementChart   = "chart"
+
+	SlideElementFunctionPlot = "functionPlot"
 )
 
 // SlideElementChart 的图表类型取值。
@@ -109,6 +111,13 @@ type SlideElement struct {
 	Title      string             `json:"title,omitempty"`
 	Categories []string           `json:"categories,omitempty"`
 	Series     []SlideChartSeries `json:"series,omitempty"`
+
+	// functionPlot 专用：模型只产出数学表达式与坐标窗口，
+	// 前端确定性翻译为绘图库配置（模型不产出 JS）。
+	XRange [2]float64                  `json:"xRange,omitempty"`
+	YRange [2]float64                  `json:"yRange,omitempty"`
+	Grid   bool                        `json:"grid,omitempty"`
+	Curves []SlideFunctionPlotCurve    `json:"curves,omitempty"`
 }
 
 // SlideChartSeries chart 元素的一个数据系列。
@@ -116,6 +125,15 @@ type SlideElement struct {
 type SlideChartSeries struct {
 	Name   string    `json:"name"`
 	Values []float64 `json:"values"`
+}
+
+// SlideFunctionPlotCurve functionPlot 元素的一条函数曲线。
+// Expression 为纯数学表达式（字符与函数名经白名单校验，防脚本注入）；
+// Color 缺省由前端按 accent 派生色板按序分配。
+type SlideFunctionPlotCurve struct {
+	Expression string `json:"expression"`
+	Color      string `json:"color,omitempty"`
+	Dash       bool   `json:"dash,omitempty"`
 }
 
 // SlideTextStyle text 元素的行内样式。

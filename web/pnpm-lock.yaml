@@ -17,6 +17,9 @@ importers:
       echarts:
         specifier: ^6.1.0
         version: 6.1.0
+      function-plot:
+        specifier: ^1.25.4
+        version: 1.25.4
       katex:
         specifier: ^0.18.5
         version: 0.18.5
@@ -1110,6 +1113,9 @@ packages:
     engines: {node: ^6 || ^7 || ^8 || ^9 || ^10 || ^11 || ^12 || >=13.7}
     hasBin: true
 
+  built-in-math-eval@0.3.2:
+    resolution: {integrity: sha512-YUEswPdQJYtAP0E9pMq7va05M6iA/8U3Pthnlx+fwbej1G16hy/ZBxyLw+gZpxdijjGGqiwxm7vs3tW7IQuUnw==}
+
   bundle-name@4.1.0:
     resolution: {integrity: sha512-tjwM5exMg6BGRI+kNmTntNsvdZS1X8BFYS6tnJ2hdH0kVxM6/eVZ2xy+FqStSWvYmtfFMDLIxurorHwDKfDz5Q==}
     engines: {node: '>=18'}
@@ -1401,6 +1407,9 @@ packages:
   dompurify@3.4.15:
     resolution: {integrity: sha512-EUBjM+B+lkDE41iE82DDSCfkoPGfXx8IxFxPMjNzm/Uk4xDet77rTN9wqlxlVg71kK7XGuUMv6wUxJUwwv+Xyw==}
 
+  double-bits@1.1.1:
+    resolution: {integrity: sha512-BCLEIBq0O/DWoA7BsCu/R+RP0ZXiowP8BhtJT3qeuuQEBpnS8LK/Wo6UTJQv6v8mK1fj8n90YziHLwGdM5whSg==}
+
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
     engines: {node: '>= 0.4'}
@@ -1530,6 +1539,10 @@ packages:
     resolution: {integrity: sha512-kVscqXk4OCp68SZ0dkgEKVi6/8ij300KBWTJq32P/dYeWTSwK41WyTxalN1eRmA5Z9UU/LX9D7FWSmV9SAYx6g==}
     engines: {node: '>=0.10.0'}
 
+  events@3.3.0:
+    resolution: {integrity: sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q==}
+    engines: {node: '>=0.8.x'}
+
   evtd@0.2.4:
     resolution: {integrity: sha512-qaeGN5bx63s/AXgQo8gj6fBkxge+OoLddLniox5qtLAEY5HSnuSlISXVPxnSae1dWblvTh4/HoMIB+mbMsvZzw==}
 
@@ -1539,6 +1552,9 @@ packages:
 
   exsolve@1.1.1:
     resolution: {integrity: sha512-9U/jZUgjnSGyntRr6y5Muu1MJcwFl6kPu7k8qLF0IMNfLqvw0NZ4nnVDq0RVoZ0RvCyumib4Ez3KYrVfilrw+g==}
+
+  extend@3.0.2:
+    resolution: {integrity: sha512-fjquC59cD7CyW6urNXK0FBufkZcoiGG80wTuPujX590cB5Ttln20E2UB4S/WARVqhXffZl2LNgS+gQdPIIim/g==}
 
   fast-deep-equal@3.1.3:
     resolution: {integrity: sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==}
@@ -1607,6 +1623,9 @@ packages:
 
   function-bind@1.1.2:
     resolution: {integrity: sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==}
+
+  function-plot@1.25.4:
+    resolution: {integrity: sha512-fY8APi3mkhinoPjp5zjVRvazP8YLhsDtb0cTAksoF9HWiWYHRfT2qGHJpDMSs3Co5Zf/NF/j6ZoVzg4BmeVTTQ==}
 
   gensync@1.0.0-beta.2:
     resolution: {integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==}
@@ -1694,6 +1713,12 @@ packages:
   internmap@2.0.3:
     resolution: {integrity: sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==}
     engines: {node: '>=12'}
+
+  interval-arithmetic-eval@0.5.3:
+    resolution: {integrity: sha512-8cR5Uerz+h1yDpb8Y2z3XfnI0XOnmWapI1CP/j84EKVocr6m6/rziLU558Vi7VGh4Bgfv9VeoOQAjDV4And+tg==}
+
+  interval-arithmetic@1.1.3:
+    resolution: {integrity: sha512-RdEKOQPUky8ShFdKnsOzXXO7LMaCfZtW9Z6t6LugIWgxU1pty4KEo7hpcIDcg3CYZ2iso9fPUiQPPdhsAhaLSQ==}
 
   is-docker@3.0.0:
     resolution: {integrity: sha512-eljcgEDlEns/7AXFosB5K/2nCM4P7FQPkGc/DWLy5rmFEWvZayGrik1d9/QIY5nJ4f9YsVvBkA6kJpHn9rISdQ==}
@@ -1919,6 +1944,9 @@ packages:
     engines: {node: '>= 20'}
     hasBin: true
 
+  math-codegen@0.4.3:
+    resolution: {integrity: sha512-wDPK9BputFrirD7dXgpeIa1nkTy08Gh+nCALwEmmHSmKoCJtTYu1PjGC6Z08FmCjkHzVkhvep2mzyJWRgtOe5A==}
+
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
     engines: {node: '>= 0.4'}
@@ -1960,6 +1988,9 @@ packages:
   mlly@1.8.2:
     resolution: {integrity: sha512-d+ObxMQFmbt10sretNDytwt85VrbkhhUA/JBGm1MPaWJ65Cl4wOgLaB1NYvJSZ0Ef03MMEU/0xpPMXUIQ29UfA==}
 
+  mr-parser@0.2.2:
+    resolution: {integrity: sha512-9pMgttJp8pZtiYfoHkhBc9ncOHKmEwLMNBQpS/ZXgj4ORnPMKznYR0lZ1We3ZrD71RevQ34hKyKzDV1p/agXuw==}
+
   mrmime@2.0.1:
     resolution: {integrity: sha512-Y3wQdFg2Va6etvQ5I82yUhGdsKrcYox6p7FfL1LbK2J4V01F9TGlepTIhnK24t7koZibmg82KGglhA1XK5IsLQ==}
     engines: {node: '>=10'}
@@ -1983,6 +2014,9 @@ packages:
 
   natural-compare@1.4.0:
     resolution: {integrity: sha512-OWND8ei3VtNC9h7V60qff3SVobHr996CTwgxubgyQYEpg290h9J0buyECNNJexkFm5sOajh5G116RYA1c8ZMSw==}
+
+  nextafter@1.0.0:
+    resolution: {integrity: sha512-7PO+A89Tll2rSEfyrjtqO0MaI37+nnxBdnQcPypfbEYYuGaJxWGCqaOwQX4a3GHNTS08l1kazuiLEWZniZjMUQ==}
 
   node-releases@2.0.54:
     resolution: {integrity: sha512-YHs7BmmcsdAI5Ozuf8JZo6PT0mv2GIWC9vMfvUC3dp65M8hn7Ux8CPL+2oBI7juNuj9d0ndhTcznq2ODBps9cQ==}
@@ -3649,6 +3683,10 @@ snapshots:
       node-releases: 2.0.54
       update-browserslist-db: 1.3.2(browserslist@4.28.8)
 
+  built-in-math-eval@0.3.2:
+    dependencies:
+      math-codegen: 0.4.3
+
   bundle-name@4.1.0:
     dependencies:
       run-applescript: 7.1.0
@@ -3947,6 +3985,8 @@ snapshots:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
+  double-bits@1.1.1: {}
+
   dunder-proto@1.0.1:
     dependencies:
       call-bind-apply-helpers: 1.0.2
@@ -4090,11 +4130,15 @@ snapshots:
 
   esutils@2.0.3: {}
 
+  events@3.3.0: {}
+
   evtd@0.2.4: {}
 
   expect-type@1.4.0: {}
 
   exsolve@1.1.1: {}
+
+  extend@3.0.2: {}
 
   fast-deep-equal@3.1.3: {}
 
@@ -4156,6 +4200,20 @@ snapshots:
     optional: true
 
   function-bind@1.1.2: {}
+
+  function-plot@1.25.4:
+    dependencies:
+      built-in-math-eval: 0.3.2
+      d3-axis: 3.0.0
+      d3-color: 3.1.0
+      d3-format: 3.1.2
+      d3-interpolate: 3.0.1
+      d3-scale: 4.0.2
+      d3-selection: 3.0.0
+      d3-shape: 3.2.0
+      d3-zoom: 3.0.0
+      events: 3.3.0
+      interval-arithmetic-eval: 0.5.3
 
   gensync@1.0.0-beta.2: {}
 
@@ -4239,6 +4297,15 @@ snapshots:
   internmap@1.0.1: {}
 
   internmap@2.0.3: {}
+
+  interval-arithmetic-eval@0.5.3:
+    dependencies:
+      interval-arithmetic: 1.1.3
+      math-codegen: 0.4.3
+
+  interval-arithmetic@1.1.3:
+    dependencies:
+      nextafter: 1.0.0
 
   is-docker@3.0.0: {}
 
@@ -4424,6 +4491,11 @@ snapshots:
 
   marked@16.4.2: {}
 
+  math-codegen@0.4.3:
+    dependencies:
+      extend: 3.0.2
+      mr-parser: 0.2.2
+
   math-intrinsics@1.1.0: {}
 
   mdn-data@2.27.1: {}
@@ -4481,6 +4553,8 @@ snapshots:
       pkg-types: 1.3.1
       ufo: 1.6.4
 
+  mr-parser@0.2.2: {}
+
   mrmime@2.0.1: {}
 
   ms@2.1.3: {}
@@ -4512,6 +4586,10 @@ snapshots:
   nanoid@3.3.18: {}
 
   natural-compare@1.4.0: {}
+
+  nextafter@1.0.0:
+    dependencies:
+      double-bits: 1.1.1
 
   node-releases@2.0.54: {}
 

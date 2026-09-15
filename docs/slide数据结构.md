@@ -1,6 +1,6 @@
 # Slide 数据结构
 
-> 版本 v1.0（已确认）
+> 版本 v1.1（v1.0 基础上新增 functionPlot 元素）
 
 ## 1. 概述
 
@@ -147,6 +147,40 @@ Slide 环节的内容拆分为两部分，分列存储、分阶段生成：
 | `width` / `height` | 图表显示尺寸 px（必填，缺省 560×360）|
 
 用于呈现可量化的数据对比 / 趋势 / 占比。这是封闭的"宽表"数据结构——模型只产出枚举类型与数据，坐标轴、图例、配色（由 `accent` 派生的色板）等全部样式由前端适配器确定性翻译为 ECharts 配置（按需懒加载 + SVG 渲染），模型不直接产出图表库配置。渲染失败时该元素不显示、不影响其余内容。校验时数据长度与类目不对齐的系列会被剔除，pie 多余系列被丢弃。
+
+### 3.8 functionPlot — 函数图像
+
+```json
+{ "id": "e8", "type": "functionPlot", "x": 700, "y": 160, "width": 560, "height": 380,
+  "xRange": [-6.5, 6.5], "yRange": [-2, 2],
+  "grid": true, "title": "y = sin x",
+  "curves": [
+    { "expression": "sin(x)" },
+    { "expression": "2sin(x)-1", "dash": true }
+  ] }
+```
+
+| 字段 | 说明 |
+|---|---|
+| `width` / `height` | 显示尺寸 px（必填，缺省 560×360）|
+| `xRange` / `yRange` | `[number, number]` 横/纵轴显示窗口；`xRange` 必填（缺省回退 `[-6, 6]`），`yRange` 缺省或不合法时不自定纵轴范围 |
+| `grid` | 可选，`true` 时显示网格线 |
+| `title` | 图内标题（可选），不必另配 text 元素 |
+| `curves[]` | 1~4 条曲线（同一坐标系下叠加对比，最多保留 4 条）|
+| `curves[].expression` | **纯数学表达式字符串**，见下方白名单 |
+| `curves[].color` | 可选 hex；缺省由前端从 `accent` 派生色板按序分配（与 chart 同款策略）|
+| `curves[].dash` | 可选 bool；`true` 用虚线（适合函数与其切线/反函数等对比场景）|
+
+用途：呈现数学函数在坐标系中的图像（函数性质、变换对比、参数效果等）。优先于手工拼 shape 曲线，区别于 discrete 数据的 chart 元素。
+
+表达式白名单（模型不产出一行 JS，前端翻译为绘图库配置；非法表达式整条曲线剔除，全部非法则该元素不显示、不影响其余内容）：
+
+- 自变量：`x`；常量：`pi`、`e`
+- 运算符：`+ - * / ^`（乘方用 `^`，不写 `**`）、括号；乘号可省略（`2sin(x)` = `2*sin(x)`），除法须显式加括号避免歧义
+- 函数：`sin cos tan asin acos atan sinh cosh tanh abs sqrt cbrt log log2 log10 ln exp pow sign floor ceil round`
+- 禁止其余字符（其它字母变量、分号、引号、点方法、任何 JS 语法）
+
+渲染：前端按需懒加载 `function-plot`（d3 SVG 渲染，含内置数学表达式解析器、非 `eval`），由 `x/y/width/height` 定位、`xRange/yRange` 设坐标域、`curves` 翻译为绘图数据；slide 内为静态展示（禁缩放平移），讲解动作（`highlight` / `box` / `laser`）经 `targetElementId` 引用该元素即可，无需新增动作类型。校验时后端对表达式做**字符与标识符白名单**过滤并剔除非法曲线。
 
 ## 4. `steps` — 讲解步骤
 

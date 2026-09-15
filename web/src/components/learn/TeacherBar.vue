@@ -1,13 +1,20 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { NButton, NIcon, NTooltip } from 'naive-ui'
-import { ChatbubbleEllipsesOutline, VolumeHighOutline } from '@vicons/ionicons5'
+import {
+  ChatbubbleEllipsesOutline,
+  ChevronDownOutline,
+  ChevronUpOutline,
+  VolumeHighOutline,
+} from '@vicons/ionicons5'
 
+import { useIsMobile } from '@/composables/useBreakpoint'
 import { useConversationStore } from '@/stores/conversation'
 import { useLearnStore } from '@/stores/learn'
 
 const store = useLearnStore()
 const chat = useConversationStore()
+const isMobile = useIsMobile()
 
 // 常驻旁白：slide 显示当前步骤讲解；quiz/demo 显示引导文案（quiz 不泄露答案）
 const helperText: Record<string, string> = {
@@ -24,7 +31,20 @@ const narration = computed<string>(() => {
   return helperText[s.type] ?? ''
 })
 
-// 逐字显示（typewriter）
+// 竖屏：旁白默认两行截断，点按展开/收起（换行后重置）
+const clamped = ref(isMobile.value)
+const expanded = ref(false)
+const isExpanded = computed(() => clamped.value && expanded.value)
+
+function toggleExpand() {
+  expanded.value = !expanded.value
+}
+
+watch(clamped, () => {
+  expanded.value = false
+})
+
+// 竖屏：逐字显示（typewriter）
 const shown = ref('')
 let timer: ReturnType<typeof setInterval> | null = null
 
@@ -48,7 +68,7 @@ function startTyping() {
   }, 26)
 }
 
-watch([narration, () => store.currentSection?.id], startTyping, { immediate: true })
+watch([narration, () => store.currentSection?.id, clamped], startTyping, { immediate: true })
 
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
@@ -59,11 +79,26 @@ onBeforeUnmount(() => {
   <div class="teacher-bar" role="region" aria-label="智能老师旁白">
     <div class="teacher-bar__avatar" aria-hidden="true">师</div>
 
-    <div class="teacher-bar__narration">
+    <div class="teacher-bar__narration" @click="clamped && toggleExpand()">
       <span class="teacher-bar__label">讲解</span>
-      <p class="teacher-bar__text">
+      <p class="teacher-bar__text" :class="{ 'is-clamp': clamped && !expanded }">
         {{ shown }}<span v-if="shown.length < narration.length" class="teacher-bar__caret" />
       </p>
+      <n-button
+        v-if="clamped"
+        quaternary
+        circle
+        size="tiny"
+        :aria-label="expanded ? '收起旁白' : '展开旁白'"
+        @click.stop="toggleExpand"
+      >
+        <template #icon>
+          <n-icon :size="14">
+            <ChevronUpOutline v-if="expanded" />
+            <ChevronDownOutline v-else />
+          </n-icon>
+        </template>
+      </n-button>
     </div>
 
     <div class="teacher-bar__actions">
@@ -88,7 +123,7 @@ onBeforeUnmount(() => {
         <template #icon>
           <n-icon><ChatbubbleEllipsesOutline /></n-icon>
         </template>
-        向老师提问
+        {{ isMobile ? '提问' : '向老师提问' }}
       </n-button>
     </div>
   </div>
@@ -147,6 +182,12 @@ onBeforeUnmount(() => {
   color: var(--app-text-1, #0f172a);
   white-space: pre-wrap;
 }
+.teacher-bar__text.is-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+}
 .teacher-bar__caret {
   display: inline-block;
   width: 2px;
@@ -170,5 +211,29 @@ onBeforeUnmount(() => {
 }
 .is-muted {
   color: var(--app-text-2, #64748b);
+}
+
+/* ---------- 移动端竖屏：压缩旁白为一行高度的收合面板 ---------- */
+@media (max-width: 768px) {
+  .teacher-bar {
+    flex: 0 0 auto;
+    gap: 8px;
+    padding: 6px 10px;
+  }
+  .teacher-bar__avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
+  }
+  .teacher-bar__label {
+    display: none;
+  }
+  .teacher-bar__text {
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .teacher-bar__narration {
+    cursor: default;
+  }
 }
 </style>

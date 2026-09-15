@@ -276,6 +276,81 @@ func TestSlideSanitizeChartElement(t *testing.T) {
 	require.Equal(t, "x", pie.Series[0].Name)
 }
 
+// ---- functionPlot 元素校验 ----
+
+// 合法表达式保留并补默认尺寸；非法窗口回退默认；非法表达式 / 无曲线的元素被剔除；
+// 曲线上限 4 条，非法色被清空。
+func TestSlideSanitizeFunctionPlotElement(t *testing.T) {
+	c := &types.SlideContent{Elements: []types.SlideElement{
+		{ID: "e1", Type: types.SlideElementFunctionPlot, X: 80, Y: 160,
+			XRange: [2]float64{-6.5, 6.5},
+			Curves: []types.SlideFunctionPlotCurve{
+				{Expression: "sin(x)", Color: "blue"}, // 非法色清空
+				{Expression: "2*sin(x)-1", Dash: true},
+			},
+		},
+		{ID: "e2", Type: types.SlideElementFunctionPlot, X: 80, Y: 160}, // 无曲线
+		{ID: "e3", Type: types.SlideElementFunctionPlot, X: 80, Y: 160,
+			Curves: []types.SlideFunctionPlotCurve{
+				{Expression: "sin(x)"}, {Expression: "cos(x)"},
+				{Expression: "tan(x)"}, {Expression: "sqrt(x)"},
+				{Expression: "abs(x)"}, // 第 5 条被丢弃
+			},
+		},
+		{ID: "e4", Type: types.SlideElementFunctionPlot, X: 80, Y: 160,
+			Curves: []types.SlideFunctionPlotCurve{
+				{Expression: "x.value();"}, // 非法字符
+				{Expression: "hack(x)"},    // 未知函数名
+			},
+		},
+	}}
+	require.NoError(t, validateSlideContent(c))
+	require.Len(t, c.Elements, 2)
+
+	plot := c.Elements[0]
+	require.Equal(t, 560, plot.Width)
+	require.Equal(t, 360, plot.Height)
+	require.Empty(t, plot.Curves[0].Color)
+	require.True(t, validFunctionRange(plot.XRange))
+	tp := c.Elements[1]
+	require.Equal(t, types.SlideElementFunctionPlot, tp.Type)
+	require.Len(t, tp.Curves, 4)
+}
+
+// 非法 xRange 回退默认 [-6,6]；非法 yRange 归零（前端自适应）。
+func TestSlideSanitizeFunctionPlotRange(t *testing.T) {
+	el := &types.SlideElement{ID: "e1", Type: types.SlideElementFunctionPlot, X: 0, Y: 0,
+		XRange: [2]float64{5, -5},
+		YRange: [2]float64{3, 3},
+		Curves: []types.SlideFunctionPlotCurve{{Expression: "x^2"}},
+	}
+	require.True(t, sanitizeFunctionPlotElement(el))
+	require.Equal(t, [2]float64{-6, 6}, el.XRange)
+	require.Equal(t, [2]float64{}, el.YRange)
+
+	el.YRange = [2]float64{-2, 2}
+	require.True(t, sanitizeFunctionPlotElement(el))
+	require.Equal(t, [2]float64{-2, 2}, el.YRange)
+}
+
+// 表达式白名单：合法样本全通过，非法样本全拒绝。
+func TestValidFunctionExpression(t *testing.T) {
+	valid := []string{
+		"x", "2*x+1", "-3x^2", "sin(x)", "2sin(x)+cos(2x)", "sqrt(abs(x))",
+		"exp(-x/2)*cos(pi*x)", "log(x)", "x^2/4 - 1", "e^(-x^2/2)",
+	}
+	for _, v := range valid {
+		require.True(t, validFunctionExpression(v), v)
+	}
+	invalid := []string{
+		"", "   ", "sin(1).value", "eval('x')", "fetch(x)", "x;", "a_variable",
+		"function(){return 1}", "import x", strings.Repeat("x", 201),
+	}
+	for _, s := range invalid {
+		require.False(t, validFunctionExpression(s), s)
+	}
+}
+
 // ---- 白板类动作校验 ----
 
 // oidSet 构造元素 id 集合，供 sanitizeSlideSteps 测试使用。
@@ -319,7 +394,7 @@ func TestSlideSanitizeStepDraw(t *testing.T) {
 			{Type: types.SlideActionDraw, Drawing: &types.SlideDrawing{
 				Kind: types.SlideDrawPen, Points: pts,
 			}},
-			{Type: types.SlideActionDraw, Drawing: &types.SlideDrawing{Kind: "spray"}},           // 非法 kind
+			{Type: types.SlideActionDraw, Drawing: &types.SlideDrawing{Kind: "spray"}},            // 非法 kind
 			{Type: types.SlideActionDraw, Drawing: &types.SlideDrawing{Kind: types.SlideDrawPen}}, // 无点集
 			{Type: types.SlideActionDraw, Drawing: &types.SlideDrawing{
 				Kind: types.SlideDrawText, Content: " ", // 空 text

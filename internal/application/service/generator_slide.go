@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"text/template"
 
@@ -341,6 +342,10 @@ func sanitizeSlideElements(in []types.SlideElement) []types.SlideElement {
 			if !sanitizeChartElement(&el) {
 				continue
 			}
+		case types.SlideElementFunctionPlot:
+			if !sanitizeFunctionPlotElement(&el) {
+				continue
+			}
 		default:
 			continue
 		}
@@ -513,6 +518,128 @@ func sanitizeChartElement(el *types.SlideElement) bool {
 	return true
 }
 
+// functionExprIdentifiers 函数表达式允许的标识符（数学函数 + 常量），缺失/未知一律拒绝。
+var functionExprIdentifiers = map[string]bool{
+	"sin": true, "cos": true, "tan": true,
+	"asin": true, "acos": true, "atan": true,
+	"sinh": true, "cosh": true, "tanh": true,
+	"abs": true, "sqrt": true, "cbrt": true,
+	"log": true, "log2": true, "log10": true, "ln": true,
+	"exp": true, "pow": true, "sign": true,
+	"floor": true, "ceil": true, "round": true,
+	"pi": true, "e": true, "x": true,
+}
+
+// validFunctionExpression 校验函数图像表达式为纯数学表达式：
+// 字符白名单（数字 / x / 括号 / 运算符 / 小数点 / 逗号 / 空白）+ 标识符白名单。
+// 非法表达式（含脚本注入、未知函数名等）直接剔除该曲线。表达式长度 <= 200。
+func validFunctionExpression(expr string) bool {
+	s := strings.TrimSpace(expr)
+	if s == "" || len(s) > 200 {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+		case r == 'x' || r == 'X':
+		case r == '+' || r == '-' || r == '*' || r == '/' || r == '^':
+		case r == '(' || r == ')':
+		case r == '.' || r == ',':
+		case r == ' ' || r == '\t':
+		case r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z':
+		default:
+			return false
+		}
+	}
+	// 提取全部字母段，逐段核对白名单（大小写不敏感）
+	start := -1
+	for i := 0; i <= len(s); i++ {
+		c := byte(' ')
+		if i < len(s) {
+			c = s[i]
+		}
+		isAlpha := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+		switch {
+		case isAlpha && start < 0:
+			start = i
+		case !isAlpha && start >= 0:
+			tok := strings.ToLower(s[start:i])
+			if !functionExprIdentifiers[tok] {
+				return false
+			}
+			start = -1
+		}
+	}
+	return true
+}
+
+// validFunctionRange 校验坐标窗口：有限数且下界 < 上界。
+func validFunctionRange(r [2]float64) bool {
+	if math.IsNaN(r[0]) || math.IsNaN(r[1]) || math.IsInf(r[0], 0) || math.IsInf(r[1], 0) {
+		return false
+	}
+	return r[0] < r[1]
+}
+
+// sanitizeFunctionPlotElement 就地校验 functionPlot 元素数据，非法返回 false（由调用方剔除）。
+// xRange 非法回退默认 [-6, 6]；yRange 非法归零（前端不设纵轴窗口，自适应）；
+// 曲线逐条白名单校验、最多保留 4 条；无合法曲线则整体剔除。
+func sanitizeFunctionPlotElement(el *types.SlideElement) bool {
+	if !validFunctionRange(el.XRange) {
+		el.XRange = [2]float64{-6, 6}
+	}
+	if !validFunctionRange(el.YRange) {
+		el.YRange = [2]float64{}
+	}
+	kept := make([]types.SlideFunctionPlotCurve, 0, len(el.Curves))
+	for _, c := range el.Curves {
+		if len(kept) >= 4 {
+			break
+		}
+		c.Expression = strings.TrimSpace(c.Expression)
+		if !validFunctionExpression(c.Expression) {
+			continue
+		}
+		c.Color = strings.TrimSpace(c.Color)
+		// 颜色非法时清空，交由前端按 accent 派生色板分配。
+		if c.Color != "" && !isValidHexColor(c.Color) {
+			c.Color = ""
+		}
+		kept = append(kept, c)
+	}
+	if len(kept) == 0 {
+		return false
+	}
+	el.Curves = kept
+	el.Title = strings.TrimSpace(el.Title)
+	if el.Width <= 0 {
+		el.Width = 560
+	}
+	if el.Height <= 0 {
+		el.Height = 360
+	}
+	return true
+}
+
+// isValidHexColor 校验合法 hex 颜色（#RRGGBB / #RRGGBBAA / #RGB）。
+func isValidHexColor(c string) bool {
+	if !strings.HasPrefix(c, "#") {
+		return false
+	}
+	switch len(c) - 1 {
+	case 3, 6, 8:
+	default:
+		return false
+	}
+	for _, r := range c[1:] {
+		ok := r >= '0' && r <= '9' || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F'
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // elementIDSet 收集元素 id 集合，供讲解动作引用校验。
 func elementIDSet(c *types.SlideContent) map[string]bool {
 	set := make(map[string]bool, len(c.Elements))
@@ -606,6 +733,14 @@ func slideElementSummary(c *types.SlideContent) string {
 			fmt.Fprintf(&b, " 类目: %s", strings.Join(el.Categories, " / "))
 			for _, s := range el.Series {
 				fmt.Fprintf(&b, " 系列[%s]: %v", s.Name, s.Values)
+			}
+		case types.SlideElementFunctionPlot:
+			if el.Title != "" {
+				b.WriteString(" 标题: ")
+				b.WriteString(el.Title)
+			}
+			for _, c := range el.Curves {
+				fmt.Fprintf(&b, " 曲线: y=%s", c.Expression)
 			}
 		}
 		b.WriteString("\n")

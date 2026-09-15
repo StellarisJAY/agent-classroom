@@ -15,5 +15,8 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* 竖屏全面屏：避开底部手势条 */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-top: env(safe-area-inset-top, 0px);
 }
 </style>
