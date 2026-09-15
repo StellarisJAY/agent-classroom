@@ -598,15 +598,6 @@ func (s *CourseService) getDraftOutline(ctx context.Context, userID, courseID ty
 	return o, nil
 }
 
-// outlineIDFor 返回用于历史快照的大纲 ID：已有大纲用其 ID，否则按 courseID 约定查询后新建。
-func outlineIDFor(existing *types.Outline, courseID types.ID) types.ID {
-	if existing != nil {
-		return existing.ID
-	}
-	// 首次创建时尚未回填 ID，占位：实际在事务内 Outline 已赋值，这里仅供查询一致性。
-	return types.NilID
-}
-
 // existingOutlineText 将当前大纲格式化为 LLM 可读的 Markdown 列表。
 func existingOutlineText(o *types.Outline) string {
 	if o == nil {
@@ -618,13 +609,16 @@ func existingOutlineText(o *types.Outline) string {
 	}
 	var b strings.Builder
 	for i, s := range content.Sections {
-		b.WriteString(fmt.Sprintf("%d. [%s] %s", i+1, s.Type, s.Title))
+		fmt.Fprintf(&b, "%d. [%s] %s", i+1, s.Type, s.Title)
 		if len(s.KnowledgePoints) > 0 {
-			b.WriteString(" — 知识点：" + strings.Join(s.KnowledgePoints, "；"))
+			b.WriteString(" — 知识点：")
+			b.WriteString(strings.Join(s.KnowledgePoints, "；"))
 		}
 		b.WriteString("\n")
 		if strings.TrimSpace(s.Description) != "" {
-			b.WriteString("   描述：" + strings.TrimSpace(s.Description) + "\n")
+			b.WriteString("   描述：")
+			b.WriteString(strings.TrimSpace(s.Description))
+			b.WriteString("\n")
 		}
 	}
 	return strings.TrimSuffix(b.String(), "\n")

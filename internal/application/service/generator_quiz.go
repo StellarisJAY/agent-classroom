@@ -148,15 +148,16 @@ func validQuizQuestion(q quizLLMQuestion) bool {
 	if len(q.Explanations) != nOpts {
 		return false
 	}
-	if q.Type == types.QuestionTypeSingle {
+	switch q.Type {
+	case types.QuestionTypeSingle:
 		if nOpts > 6 || len(q.Answers) != 1 {
 			return false
 		}
-	} else if q.Type == types.QuestionTypeMultiple {
+	case types.QuestionTypeMultiple:
 		if nOpts < 3 || nOpts > 6 || len(q.Answers) < 2 {
 			return false
 		}
-	} else {
+	default:
 		return false
 	}
 	seen := make(map[int]bool, len(q.Answers))
