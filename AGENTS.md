@@ -30,6 +30,8 @@ agent-classroom/
 │   │   ├── question.go             # 测试题实体 + QuestionRepo
 │   │   ├── document.go             # 参考文档 + DocumentRepo
 │   │   └── learn.go                # 学习进度 / 问答会话相关
+│   ├── agent/                      # 统一 agent loop 封装（仅依赖 model；工具定义+执行器、
+│   │                               # 业务装配上下文、轮次上限强制收尾、逐条消息回调）
 │   ├── application/
 │   │   ├── service/                # 业务逻辑实现（依赖 repo 接口 + model 适配器）
 │   │   │   ├── generator_slide.go  # Slide 环节生成
@@ -106,6 +108,8 @@ web/
 | `数据库设计.md` | PostgreSQL 表结构：通用约定（UUIDv7 主键、无软删除、jsonb 存环节详情）、6 个枚举类型、users/model_configs/courses/outlines/sections/questions/documents/progresses/conversations/messages 各表字段与约束 |
 | `前端设计.md` | 前端实现约定：技术选型（Naive UI + Pinia + KaTeX）、设计 token（slate 灰 + teal 强调色、浅/深主题）、页面与组件划分、API 约定 |
 | `slide数据结构.md` | Slide 环节 content/steps 两阶段生成的 jsonb 结构：画布属性、元素类型（text/formula/shape/list/image）、坐标定位与讲解步骤动作（underline/highlight/box）|
+| `agent_loop.md` | 统一 agent loop 封装规范（internal/agent）：Tool/Handler/Runner 类型、上下文注入由业务装配、轮次上限强制收尾与失败回传语义、使用示例与测试约定 |
+| `讨论模式方案.md` | 学习页讨论模式全案：单流 agent loop + 合成工具结果、工具集、状态机、消息落库、API 设计、实施切片 |
 
 ## 技术选型
 
@@ -152,7 +156,7 @@ web/
 
 ## 生成流程与提示词约定
 
-- LLM 提示词一律放 `internal/application/service/prompts/*.md`，经 `go:embed` 引入（`prompt.go`），不硬编码在 Go 代码里。
+- LLM 提示词一律放 `prompts/` 子目录（现存 `internal/application/service/prompts/`、`internal/agent/prompts/`），经 `go:embed` 引入（各自包内 `prompt.go`），不硬编码在 Go 代码里。
 - 互动演示环节以 `templates/*.html` 骨架拼接生成，产出页面启用 CSP 禁止网络访问，写入 `section.content`。
 - 参考文档提取走 `model/extractor` 链：按配置选 local / mineru / chain（外部优先、本地兜底）。
 
