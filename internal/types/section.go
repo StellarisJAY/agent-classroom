@@ -82,6 +82,8 @@ type GenerationContext struct {
 	Storage Storage
 	// Thinking 模型思考限制
 	Thinking string
+	// Retry 生成调用失败重试策略（零值 = 单次尝试不重试）
+	Retry RetryPolicy
 }
 
 // ---- 业务错误 ----
@@ -118,7 +120,7 @@ type SectionContentGenerator interface {
 // SectionService 环节内容生成业务接口。
 type SectionService interface {
 	// ConfirmOutline 确认大纲并物化环节，随后立即启动后台串行生成，返回物化后的环节进度。
-	ConfirmOutline(ctx context.Context, userID, courseID ID, req *ConfirmOutlineReq) ([]SectionProgress, error)
+	ConfirmOutline(ctx context.Context, userID, courseID ID, req ConfirmOutlineReq) ([]SectionProgress, error)
 	// EnsureGeneration 确保某课程的内容生成循环在运行（未运行则启动/续跑）。
 	// 用于中断后恢复；课程须已确认大纲或处于生成中。
 	EnsureGeneration(ctx context.Context, userID, courseID ID) error

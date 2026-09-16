@@ -65,7 +65,7 @@ func NewDiscussionService(
 //	课程校验（owner + 全部环节 done）→ 取会话 → 落库 user 消息 →
 //	装配 system（人设 + 课程 上下文 + 历史窗口） → agent.Runner.Run（工具合成 success）→
 //	OnText/OnToolCall → sink，OnMessage → 逐条落库。
-func (s *DiscussionService) Ask(ctx context.Context, userID, courseID types.ID, req *types.AskQuestionReq, sink types.DiscussionSink) error {
+func (s *DiscussionService) Ask(ctx context.Context, userID, courseID types.ID, req types.AskQuestionReq, sink types.DiscussionSink) error {
 	course, err := s.courseRepo.GetByID(ctx, userID, courseID)
 	if err != nil {
 		if errors.Is(err, types.ErrNotFound) {
@@ -107,22 +107,25 @@ func (s *DiscussionService) Ask(ctx context.Context, userID, courseID types.ID, 
 	if err := s.convRepo.Append(ctx, conv.ID, types.MessageRoleUser, questionRaw, req.SectionID); err != nil {
 		return err
 	}
-
+	// 构建agent上下文
 	messages, err := s.buildMessages(ctx, course, secs, req, conv.ID)
 	if err != nil {
 		return err
 	}
-
+	// agent loop开始执行，回答问题+动作执行
 	runner := &agent.Runner{Client: discussionClient, MaxTurns: discussionMaxTurns}
 	err = runner.Run(ctx, agent.Request{
 		Messages: messages,
 		Tools:    buildDiscussionTools(currentSectionType(secs, req.SectionID)),
 		Thinking: thinking,
 		Handler: agent.Handler{
+			// agent输出文本
 			OnText: func(_ context.Context, delta string) error {
 				return sink.Text(delta)
 			},
+			// agent工具调用
 			OnToolCall: func(_ context.Context, calls []model.ToolCall) error {
+				// 因为讨论模式智能体的工具动作只作用于前端页面，没有持久性，所以只要发送sse成功就视为工具调用成功
 				for _, call := range calls {
 					if aerr := sink.Action(call.Function.Name, call.Function.Arguments); aerr != nil {
 						return aerr
@@ -130,6 +133,7 @@ func (s *DiscussionService) Ask(ctx context.Context, userID, courseID types.ID, 
 				}
 				return nil
 			},
+			// agent消息落库
 			OnMessage: func(_ context.Context, msg model.ChatMessage) error {
 				return s.appendMessage(ctx, conv.ID, req.SectionID, msg)
 			},
@@ -202,7 +206,7 @@ func (s *DiscussionService) resolveClient(ctx context.Context, userID types.ID, 
 
 // buildMessages 装配本次提问的初始消息序列：
 // system（人设 + 课程/环节上下文）+ 历史窗口（LRU 截断）+ 本轮 user 消息。
-func (s *DiscussionService) buildMessages(ctx context.Context, course *types.Course, secs []types.Section, req *types.AskQuestionReq, convID types.ID) ([]model.ChatMessage, error) {
+func (s *DiscussionService) buildMessages(ctx context.Context, course *types.Course, secs []types.Section, req types.AskQuestionReq, convID types.ID) ([]model.ChatMessage, error) {
 	system, err := s.buildSystem(ctx, course, secs, req)
 	if err != nil {
 		return nil, err
@@ -243,7 +247,7 @@ func currentSectionType(secs []types.Section, sectionID *types.ID) string {
 // buildSystem 组装讨论模式 system 提示词：
 // 人设/工具规则（embed 的 prompts/discussion.md）+ 课程上下文 + 环节大纲归约 +
 // 当前环节标注（含步骤索引）。quiz 环节在此硬剔除答案与解释。
-func (s *DiscussionService) buildSystem(ctx context.Context, course *types.Course, secs []types.Section, req *types.AskQuestionReq) (string, error) {
+func (s *DiscussionService) buildSystem(ctx context.Context, course *types.Course, secs []types.Section, req types.AskQuestionReq) (string, error) {
 	var b strings.Builder
 	b.WriteString(discussionSystemPrompt)
 	b.WriteString("\n\n# [course]\n\n")

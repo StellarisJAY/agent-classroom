@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 
+	"github.com/StellarisJAY/agent-classroom/internal/config"
 	"github.com/StellarisJAY/agent-classroom/internal/model"
 	"github.com/StellarisJAY/agent-classroom/internal/types"
 )
@@ -104,7 +105,7 @@ func newSectionSvc(course types.CourseRepo, outline types.OutlineRepo, sec types
 		resolve: func() (model.ProviderConfig, error) {
 			return model.ProviderConfig{Provider: "test", Model: "m", APIKey: "k"}, nil
 		},
-	}, testRegistry(), newTestDocsMock())
+	}, testRegistry(), newTestDocsMock(), &config.Config{})
 }
 
 // newSectionSvcFull 带自定义 questionRepo 与注册表构造，供走真实生成（含 quiz）的测试使用。
@@ -113,7 +114,7 @@ func newSectionSvcFull(course types.CourseRepo, outline types.OutlineRepo, sec t
 		resolve: func() (model.ProviderConfig, error) {
 			return model.ProviderConfig{Provider: "test", Model: "m", APIKey: "k"}, nil
 		},
-	}, registry, newTestDocsMock())
+	}, registry, newTestDocsMock(), &config.Config{})
 }
 
 // testRegistry 注册 test provider，按序产出给定 LLM 响应（缺省 Slide content/steps）。
@@ -139,7 +140,7 @@ func TestConfirmOutlineRejectsNonDraft(t *testing.T) {
 		&mockOutlineRepo{},
 		&mockSectionRepo{},
 	)
-	_, err := svc.ConfirmOutline(context.Background(), uid, cid, &types.ConfirmOutlineReq{
+	_, err := svc.ConfirmOutline(context.Background(), uid, cid, types.ConfirmOutlineReq{
 		Sections: []types.OutlineSection{{Title: "x", Type: types.SectionTypeSlide}},
 	})
 	require.ErrorIs(t, err, types.ErrOutlineAlreadyConfirmed)
@@ -149,7 +150,7 @@ func TestConfirmOutlineEmpty(t *testing.T) {
 	uid := types.NewID()
 	cid := types.NewID()
 	svc := newSectionSvc(&mockCourseRepo{}, &mockOutlineRepo{}, &mockSectionRepo{})
-	_, err := svc.ConfirmOutline(context.Background(), uid, cid, &types.ConfirmOutlineReq{})
+	_, err := svc.ConfirmOutline(context.Background(), uid, cid, types.ConfirmOutlineReq{})
 	require.ErrorIs(t, err, types.ErrInvalidRequest)
 }
 
@@ -189,7 +190,7 @@ func TestConfirmOutlineMaterializesSections(t *testing.T) {
 		},
 	)
 
-	progs, err := svc.ConfirmOutline(context.Background(), uid, cid, &types.ConfirmOutlineReq{
+	progs, err := svc.ConfirmOutline(context.Background(), uid, cid, types.ConfirmOutlineReq{
 		Sections: []types.OutlineSection{
 			{Title: "声明", Type: types.SectionTypeSlide, KnowledgePoints: []string{"语法"}, Description: "先讲定义，再给类比"},
 			{Title: "访问", Type: types.SectionTypeQuiz, KnowledgePoints: []string{"索引"}},

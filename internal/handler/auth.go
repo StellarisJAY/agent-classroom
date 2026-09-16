@@ -24,7 +24,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		Error(c, err)
 		return
 	}
-	info, err := h.svc.Register(c.Request.Context(), &req)
+	info, err := h.svc.Register(c.Request.Context(), req)
 	if err != nil {
 		Error(c, err)
 		return
@@ -39,7 +39,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		Error(c, err)
 		return
 	}
-	resp, err := h.svc.Login(c.Request.Context(), &req)
+	resp, err := h.svc.Login(c.Request.Context(), req)
 	if err != nil {
 		Error(c, err)
 		return

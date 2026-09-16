@@ -42,7 +42,7 @@ func (h *ModelConfigHandler) Create(c *gin.Context) {
 		Error(c, err)
 		return
 	}
-	info, err := h.svc.Create(c.Request.Context(), userID, &req)
+	info, err := h.svc.Create(c.Request.Context(), userID, req)
 	if err != nil {
 		Error(c, err)
 		return
@@ -66,7 +66,7 @@ func (h *ModelConfigHandler) Update(c *gin.Context) {
 		Error(c, err)
 		return
 	}
-	info, err := h.svc.Update(c.Request.Context(), userID, id, &req)
+	info, err := h.svc.Update(c.Request.Context(), userID, id, req)
 	if err != nil {
 		Error(c, err)
 		return

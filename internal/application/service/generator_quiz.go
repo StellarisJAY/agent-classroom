@@ -1,14 +1,12 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
-	"text/template"
 
 	"gorm.io/datatypes"
 
@@ -70,15 +68,19 @@ func (g *quizGenerator) Generate(ctx context.Context, section *types.Section, ge
 		DocsSummary:      strings.TrimSpace(genCtx.DocsText),
 		UserRequest:      genCtxUserRequest(genCtx),
 	}
-	messages, err := renderQuizMessages(quizUserTpl, msgData, quizSystemPrompt)
+	messages, err := buildPromptMessages(quizUserTpl, msgData, quizSystemPrompt)
 	if err != nil {
 		return err
 	}
 
 	var questions []quizLLMQuestion
-	err = retryCall(func() error {
+	err = util.Retry(ctx, genCtx.Retry, func() error {
 		slog.Debug("generating quiz questions")
-		resp, cerr := chatOnce(ctx, genCtx.Client, messages, 0.3, genCtx.Thinking)
+		resp, cerr := genCtx.Client.Chat(ctx, model.ChatRequest{
+			Messages:    messages,
+			Temperature: new(0.3),
+			Thinking:    genCtx.Thinking,
+		})
 		if cerr != nil {
 			return cerr
 		}
@@ -104,18 +106,6 @@ func (g *quizGenerator) Generate(ctx context.Context, section *types.Section, ge
 		return err
 	}
 	return g.questionRepo.ReplaceBySection(ctx, section.ID, rows)
-}
-
-// renderQuizMessages 渲染 Quiz user 模板并拼接 system 提示词。
-func renderQuizMessages(tpl *template.Template, data any, system string) ([]model.ChatMessage, error) {
-	var buf bytes.Buffer
-	if err := tpl.Execute(&buf, data); err != nil {
-		return nil, fmt.Errorf("render quiz prompt: %w", err)
-	}
-	return []model.ChatMessage{
-		{Role: model.RoleSystem, Content: system},
-		{Role: model.RoleUser, Content: buf.String()},
-	}, nil
 }
 
 // ---- 校验 / 清理 ----

@@ -1,14 +1,12 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
-	"text/template"
 
 	"gorm.io/datatypes"
 
@@ -63,15 +61,19 @@ func (g *demoBasicGenerator) Generate(ctx context.Context, section *types.Sectio
 		DocsSummary:      strings.TrimSpace(genCtx.DocsText),
 		UserRequest:      genCtxUserRequest(genCtx),
 	}
-	messages, err := renderDemoBasicMessages(demoBasicUserTpl, msgData, demoBasicSystemPrompt)
+	messages, err := buildPromptMessages(demoBasicUserTpl, msgData, demoBasicSystemPrompt)
 	if err != nil {
 		return err
 	}
 
 	var result *demoBasicLLMResult
-	err = retryCall(func() error {
+	err = util.Retry(ctx, genCtx.Retry, func() error {
 		slog.Debug("generating demo basic code")
-		resp, cerr := chatOnce(ctx, genCtx.Client, messages, 0.3, genCtx.Thinking)
+		resp, cerr := genCtx.Client.Chat(ctx, model.ChatRequest{
+			Messages:    messages,
+			Temperature: new(0.3),
+			Thinking:    genCtx.Thinking,
+		})
 		if cerr != nil {
 			return cerr
 		}
@@ -98,18 +100,6 @@ func (g *demoBasicGenerator) Generate(ctx context.Context, section *types.Sectio
 	}
 	section.Content = datatypes.JSON(content)
 	return nil
-}
-
-// renderDemoBasicMessages 渲染 Demo Basic user 模板并拼接 system 提示词。
-func renderDemoBasicMessages(tpl *template.Template, data any, system string) ([]model.ChatMessage, error) {
-	var buf bytes.Buffer
-	if err := tpl.Execute(&buf, data); err != nil {
-		return nil, fmt.Errorf("render demo basic prompt: %w", err)
-	}
-	return []model.ChatMessage{
-		{Role: model.RoleSystem, Content: system},
-		{Role: model.RoleUser, Content: buf.String()},
-	}, nil
 }
 
 // validDemoBasic 三段内容至少有一段非空，否则视为无效。

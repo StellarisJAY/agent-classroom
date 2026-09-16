@@ -222,11 +222,11 @@ type CourseRepo interface {
 // CourseService 课程业务接口。
 type CourseService interface {
 	// List 分页返回当前用户课程列表；req 为 nil 或缺省字段时取默认（all / 第 1 页 / 每页 20）。
-	List(ctx context.Context, userID ID, req *CourseListReq) (*CourseListResp, error)
+	List(ctx context.Context, userID ID, req CourseListReq) (*CourseListResp, error)
 	// ListDocuments 返回课程全部参考文档的提取状态。
 	ListDocuments(ctx context.Context, userID, courseID ID) ([]DocumentStatusView, error)
 	// Create 创建草稿课程并保存参考文档元数据（提取结果异步落库缓存）。
-	Create(ctx context.Context, userID ID, req *CreateCourseReq) (*CourseCreateResp, error)
+	Create(ctx context.Context, userID ID, req CreateCourseReq) (*CourseCreateResp, error)
 	// StartOutline 启动大纲生成任务（后台异步执行）：校验归属与 draft 状态后触发，
 	// 立即返回；进行中重复触发返回 ErrOutlineGenerating。
 	StartOutline(ctx context.Context, userID, courseID ID, feedback string) error

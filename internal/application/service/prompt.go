@@ -1,8 +1,12 @@
 package service
 
 import (
+	"bytes"
 	_ "embed"
+	"fmt"
 	"text/template"
+
+	"github.com/StellarisJAY/agent-classroom/internal/model"
 )
 
 // 提示词模板均独立维护在 prompts/ 目录下的 markdown 文件中，
@@ -96,6 +100,18 @@ var demoBasicUserTpl = template.Must(template.New("demo_basic_user").Parse(demoB
 //
 //go:embed templates/demo_basic.html
 var demoBasicTemplate string
+
+// buildPromptMessages 渲染 user 提示词模板并拼接 system 提示词。
+func buildPromptMessages(tpl *template.Template, data any, system string) ([]model.ChatMessage, error) {
+	var buf bytes.Buffer
+	if err := tpl.Execute(&buf, data); err != nil {
+		return nil, fmt.Errorf("render prompt: %w", err)
+	}
+	return []model.ChatMessage{
+		{Role: model.RoleSystem, Content: system},
+		{Role: model.RoleUser, Content: buf.String()},
+	}, nil
+}
 
 // ---- 讨论模式（环节问答智能体老师） ----
 

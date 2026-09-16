@@ -24,7 +24,7 @@ func NewUserService(repo types.UserRepo, cfg *config.Config) types.UserService {
 	return &UserService{repo: repo, cfg: cfg}
 }
 
-func (s *UserService) Register(ctx context.Context, req *types.RegisterReq) (*types.UserInfo, error) {
+func (s *UserService) Register(ctx context.Context, req types.RegisterReq) (*types.UserInfo, error) {
 	if ok, err := s.repo.ExistsByUsername(ctx, req.Username); err != nil {
 		return nil, err
 	} else if ok {
@@ -52,7 +52,7 @@ func (s *UserService) Register(ctx context.Context, req *types.RegisterReq) (*ty
 	return toUserInfo(user), nil
 }
 
-func (s *UserService) Login(ctx context.Context, req *types.LoginReq) (*types.LoginResp, error) {
+func (s *UserService) Login(ctx context.Context, req types.LoginReq) (*types.LoginResp, error) {
 	user, err := s.repo.GetByAccount(ctx, req.Account)
 	if err != nil {
 		// 账号不存在统一走凭据错误，避免账号枚举

@@ -128,9 +128,9 @@ func NewApp(cfg *config.Config) (*App, error) {
 	outlineHistoryRepo := repo.NewOutlineHistoryRepo(db)
 	sectionRepo := repo.NewSectionRepo(db)
 	questionRepo := repo.NewQuestionRepo(db)
-	courseSvc := service.NewCourseService(courseRepo, outlineRepo, outlineHistoryRepo, documentRepo, store, objStorage, modelConfigSvc, modelRegistry, docLoader)
+	courseSvc := service.NewCourseService(courseRepo, outlineRepo, outlineHistoryRepo, documentRepo, store, objStorage, modelConfigSvc, modelRegistry, docLoader, cfg)
 	courseHandler := handler.NewCourseHandler(courseSvc)
-	sectionSvc := service.NewSectionService(courseRepo, outlineRepo, sectionRepo, questionRepo, store, documentRepo, objStorage, modelConfigSvc, modelRegistry, docLoader)
+	sectionSvc := service.NewSectionService(courseRepo, outlineRepo, sectionRepo, questionRepo, store, documentRepo, objStorage, modelConfigSvc, modelRegistry, docLoader, cfg)
 	sectionHandler := handler.NewSectionHandler(sectionSvc)
 
 	// 讨论模式：课程级问答会话（agent loop 驱动）

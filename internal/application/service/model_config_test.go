@@ -79,7 +79,7 @@ func TestModelConfigCreateEncryptsKey(t *testing.T) {
 		},
 	})
 	uid := types.NewID()
-	info, err := svc.Create(context.Background(), uid, &types.CreateModelConfigReq{
+	info, err := svc.Create(context.Background(), uid, types.CreateModelConfigReq{
 		Provider: "deepseek", Model: "deepseek-chat",
 		BaseURL: "https://api.deepseek.com/v1", APIKey: "sk-abcdefgh12345678",
 	})
@@ -102,7 +102,7 @@ func TestModelConfigCreateAsDefaultClearsOthers(t *testing.T) {
 			return nil
 		},
 	})
-	_, err := svc.Create(context.Background(), types.NewID(), &types.CreateModelConfigReq{
+	_, err := svc.Create(context.Background(), types.NewID(), types.CreateModelConfigReq{
 		Provider: "openai", Model: "gpt-4o-mini", BaseURL: "https://api.openai.com/v1",
 		APIKey: "sk-x", IsDefault: true,
 	})
@@ -112,7 +112,7 @@ func TestModelConfigCreateAsDefaultClearsOthers(t *testing.T) {
 
 func TestModelConfigInvalidBaseURL(t *testing.T) {
 	svc := newModelConfigSvc(&mockModelConfigRepo{})
-	_, err := svc.Create(context.Background(), types.NewID(), &types.CreateModelConfigReq{
+	_, err := svc.Create(context.Background(), types.NewID(), types.CreateModelConfigReq{
 		Provider: "openai", Model: "gpt-4o-mini", BaseURL: "api.openai.com", APIKey: "sk-x",
 	})
 	require.ErrorIs(t, err, types.ErrInvalidBaseURL)
@@ -163,7 +163,7 @@ func TestModelConfigUpdateKeepsKeyWhenEmpty(t *testing.T) {
 			return nil
 		},
 	})
-	_, err := svc.Update(context.Background(), uid, id, &types.UpdateModelConfigReq{
+	_, err := svc.Update(context.Background(), uid, id, types.UpdateModelConfigReq{
 		Model: "new-model", APIKey: "",
 	})
 	require.NoError(t, err)
@@ -183,7 +183,7 @@ func TestModelConfigUpdateDefaultKindChangeClearsOldKind(t *testing.T) {
 		},
 		update: func(c *types.UserModelConfig) error { return nil },
 	})
-	_, err := svc.Update(context.Background(), uid, id, &types.UpdateModelConfigReq{Kind: "image"})
+	_, err := svc.Update(context.Background(), uid, id, types.UpdateModelConfigReq{Kind: "image"})
 	require.NoError(t, err)
 	require.True(t, cleared, "已是默认的配置变更 kind 时应清除旧 kind 默认")
 }

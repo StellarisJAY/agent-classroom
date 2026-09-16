@@ -124,7 +124,7 @@ type DiscussionSink interface {
 type DiscussionService interface {
 	// Ask 处理一次提问：服务端装配上下文 → 跑 agent loop → 事件经 sink 流出 →
 	// 逐条落库。返回 error 表示 loop 失败（含业务校验类错误与 LLM 失败）。
-	Ask(ctx context.Context, userID, courseID ID, req *AskQuestionReq, sink DiscussionSink) error
+	Ask(ctx context.Context, userID, courseID ID, req AskQuestionReq, sink DiscussionSink) error
 	// ListConversation 返回课程级问答历史的结构化消息（前端按末态规则重放动作）。
 	ListConversation(ctx context.Context, userID, courseID ID) ([]ConversationMessageResp, error)
 }

@@ -81,9 +81,9 @@ type UserRepo interface {
 // UserService 用户业务接口
 type UserService interface {
 	// Register 注册新用户；冲突时返回业务错误。
-	Register(ctx context.Context, req *RegisterReq) (*UserInfo, error)
+	Register(ctx context.Context, req RegisterReq) (*UserInfo, error)
 	// Login 校验凭证并签发 access token。
-	Login(ctx context.Context, req *LoginReq) (*LoginResp, error)
+	Login(ctx context.Context, req LoginReq) (*LoginResp, error)
 	// GetMe 返回当前用户信息。
 	GetMe(ctx context.Context, id ID) (*UserInfo, error)
 }

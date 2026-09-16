@@ -11,6 +11,7 @@ import (
 
 	"gorm.io/datatypes"
 
+	"github.com/StellarisJAY/agent-classroom/internal/config"
 	"github.com/StellarisJAY/agent-classroom/internal/model"
 	"github.com/StellarisJAY/agent-classroom/internal/types"
 )
@@ -79,6 +80,7 @@ type SectionService struct {
 	modelCfgSvc  types.ModelConfigService
 	registry     *model.Registry
 	docs         *docLoader
+	retry        types.RetryPolicy
 	generators   map[string]types.SectionContentGenerator
 	runs         *sectionRuns
 }
@@ -97,6 +99,7 @@ func NewSectionService(
 	modelCfgSvc types.ModelConfigService,
 	registry *model.Registry,
 	docs *docLoader,
+	cfg *config.Config,
 ) types.SectionService {
 	return &SectionService{
 		courseRepo:   courseRepo,
@@ -109,6 +112,7 @@ func NewSectionService(
 		modelCfgSvc:  modelCfgSvc,
 		registry:     registry,
 		docs:         docs,
+		retry:        cfg.Model.Retry.Policy(),
 		generators: map[string]types.SectionContentGenerator{
 			types.SectionTypeSlide: &slideGenerator{},
 			types.SectionTypeQuiz:  &quizGenerator{questionRepo: questionRepo},
@@ -125,8 +129,8 @@ func NewSectionService(
 
 // ---- 确认大纲 ----
 
-func (s *SectionService) ConfirmOutline(ctx context.Context, userID, courseID types.ID, req *types.ConfirmOutlineReq) ([]types.SectionProgress, error) {
-	if req == nil || len(req.Sections) == 0 {
+func (s *SectionService) ConfirmOutline(ctx context.Context, userID, courseID types.ID, req types.ConfirmOutlineReq) ([]types.SectionProgress, error) {
+	if len(req.Sections) == 0 {
 		return nil, types.ErrInvalidRequest
 	}
 	course, err := s.courseRepo.GetByID(ctx, userID, courseID)
@@ -437,6 +441,7 @@ func (s *SectionService) buildGenerationContext(ctx context.Context, userID type
 		ImageClient:     imageClient,
 		Storage:         s.storage,
 		Thinking:        course.Thinking,
+		Retry:           s.retry,
 	}, nil
 }
 

@@ -6,15 +6,17 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
+
+	"github.com/StellarisJAY/agent-classroom/internal/types"
 )
 
 // Config 应用配置，字段与 config.yaml 对应，支持环境变量覆盖
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	JWT      JWTConfig
-	CORS     CORSConfig
-	Crypto   CryptoConfig
+	Server    ServerConfig
+	Database  DatabaseConfig
+	JWT       JWTConfig
+	CORS      CORSConfig
+	Crypto    CryptoConfig
 	Model     ModelConfig
 	Extractor ExtractorConfig
 	Storage   StorageConfig
@@ -89,6 +91,27 @@ type ModelConfig struct {
 	Timeout time.Duration `mapstructure:"timeout"`
 	// StreamTimeout 流式请求（问答）超时；0 表示不限制，由上层 context 控制。
 	StreamTimeout time.Duration `mapstructure:"stream_timeout"`
+	// Retry 生成类调用（大纲 / 环节内容 / 文生图）失败重试策略。
+	Retry RetryConfig `mapstructure:"retry"`
+}
+
+// RetryConfig 生成调用失败重试配置（见 types.RetryPolicy）。
+type RetryConfig struct {
+	// MaxAttempts 总尝试次数（含首次）；<=1 等价不重试
+	MaxAttempts int `mapstructure:"max_attempts"`
+	// BaseBackoff 首次重试前的等待；<=0 表示失败后立即重试
+	BaseBackoff time.Duration `mapstructure:"base_backoff"`
+	// MaxBackoff 指数退避封顶；<=0 表示不封顶
+	MaxBackoff time.Duration `mapstructure:"max_backoff"`
+}
+
+// Policy 换算为业务侧重试策略。
+func (c RetryConfig) Policy() types.RetryPolicy {
+	return types.RetryPolicy{
+		MaxAttempts: c.MaxAttempts,
+		BaseBackoff: c.BaseBackoff,
+		MaxBackoff:  c.MaxBackoff,
+	}
 }
 
 // ModelDefaultConfig 兜底模型配置。
@@ -184,6 +207,11 @@ func Load() (*Config, error) {
 
 	v.SetDefault("model.timeout", 300*time.Second)
 	v.SetDefault("model.stream_timeout", 0*time.Second)
+
+	// 生成类调用重试：默认失败后立即重试一次（与历史 retryCall 行为一致）
+	v.SetDefault("model.retry.max_attempts", 2)
+	v.SetDefault("model.retry.base_backoff", 0*time.Second)
+	v.SetDefault("model.retry.max_backoff", 0*time.Second)
 
 	v.SetDefault("extractor.provider", "chain")
 	v.SetDefault("extractor.max_doc_tokens", 20000)

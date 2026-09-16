@@ -46,6 +46,13 @@ model:
   timeout: 300s
   # 流式请求（问答）超时；0 表示不限制，由上层 context 控制
   stream_timeout: 0s
+  # 生成类调用（大纲 / 环节内容 / 文生图）失败重试：
+  # max_attempts 总尝试次数（含首次）；base_backoff 首次重试前等待（0 = 立即重试），
+  # 之后按指数递增；max_backoff 退避封顶（0 = 不封顶）
+  retry:
+    max_attempts: 2
+    base_backoff: 0s
+    max_backoff: 0s
 
 extractor:
   # 提取链路：local 仅本地提取 | mineru 强制走 minerU | chain minerU 优先、本地兜底

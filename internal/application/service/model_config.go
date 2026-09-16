@@ -45,7 +45,7 @@ func (s *ModelConfigService) List(ctx context.Context, userID types.ID) ([]types
 	return infos, nil
 }
 
-func (s *ModelConfigService) Create(ctx context.Context, userID types.ID, req *types.CreateModelConfigReq) (*types.ModelConfigInfo, error) {
+func (s *ModelConfigService) Create(ctx context.Context, userID types.ID, req types.CreateModelConfigReq) (*types.ModelConfigInfo, error) {
 	if err := validateBaseURL(req.BaseURL); err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func (s *ModelConfigService) Create(ctx context.Context, userID types.ID, req *t
 	}, nil
 }
 
-func (s *ModelConfigService) Update(ctx context.Context, userID, id types.ID, req *types.UpdateModelConfigReq) (*types.ModelConfigInfo, error) {
+func (s *ModelConfigService) Update(ctx context.Context, userID, id types.ID, req types.UpdateModelConfigReq) (*types.ModelConfigInfo, error) {
 	cur, err := s.repo.GetByID(ctx, userID, id)
 	if err != nil {
 		if errors.Is(err, types.ErrNotFound) {

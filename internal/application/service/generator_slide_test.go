@@ -24,7 +24,7 @@ func genSection(title string, kps []string) *types.Section {
 
 func genCtxWithLLM(client model.LLMClient) *types.GenerationContext {
 	course := &types.Course{Title: "数组入门", Prompt: "学习数组"}
-	return &types.GenerationContext{Course: course, Client: client, OutlineSections: []types.OutlineSection{
+	return &types.GenerationContext{Course: course, Client: client, Retry: types.RetryPolicy{MaxAttempts: 2}, OutlineSections: []types.OutlineSection{
 		{Title: "什么是数组", Type: types.SectionTypeSlide, KnowledgePoints: []string{"定义"}},
 	}, DocsText: "参考文档正文"}
 }

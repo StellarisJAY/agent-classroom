@@ -87,28 +87,3 @@ func (w *sseWriter) write(ev sseEvent) error {
 	w.flusher.Flush()
 	return nil
 }
-
-// sseSink 把事件写出包装为 types.DiscussionSink。
-type sseSink struct {
-	w *sseWriter
-}
-
-func (s sseSink) Text(delta string) error {
-	return s.w.write(sseEvent{Type: "text", Delta: delta})
-}
-
-func (s sseSink) Action(name string, arguments string) error {
-	args := json.RawMessage(arguments)
-	if !json.Valid(args) {
-		args = nil
-	}
-	return s.w.write(sseEvent{Type: "action", Name: name, Args: args})
-}
-
-func (s sseSink) End() error {
-	return s.w.write(sseEvent{Type: "end"})
-}
-
-func (s sseSink) Error(msg string) {
-	_ = s.w.write(sseEvent{Type: "error", Msg: msg})
-}

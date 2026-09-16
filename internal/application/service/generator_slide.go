@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"math"
 	"strings"
-	"text/template"
 
 	"gorm.io/datatypes"
 
@@ -93,15 +92,19 @@ func (g *slideGenerator) generateContent(ctx context.Context, section *types.Sec
 		DocsSummary:      strings.TrimSpace(genCtx.DocsText),
 		UserRequest:      genCtxUserRequest(genCtx),
 	}
-	messages, err := renderSlideMessages(slideUserTpl, msgData, slideSystemPrompt)
+	messages, err := buildPromptMessages(slideUserTpl, msgData, slideSystemPrompt)
 	if err != nil {
 		return nil, err
 	}
 
 	var content *types.SlideContent
-	err = retryCall(func() error {
+	err = util.Retry(ctx, genCtx.Retry, func() error {
 		slog.Debug("generating slide content")
-		resp, cerr := chatOnce(ctx, genCtx.Client, messages, 0.3, genCtx.Thinking)
+		resp, cerr := genCtx.Client.Chat(ctx, model.ChatRequest{
+			Messages:    messages,
+			Temperature: new(0.3),
+			Thinking:    genCtx.Thinking,
+		})
 		if cerr != nil {
 			return cerr
 		}
@@ -131,16 +134,20 @@ func (g *slideGenerator) generateSteps(ctx context.Context, section *types.Secti
 		PreviousSections: prev,
 		ElementSummary:   slideElementSummary(content),
 	}
-	messages, err := renderSlideMessages(slideStepsUserTpl, msgData, slideStepsSystemPrompt)
+	messages, err := buildPromptMessages(slideStepsUserTpl, msgData, slideStepsSystemPrompt)
 	if err != nil {
 		return nil, err
 	}
 
 	idSet := elementIDSet(content)
 	var steps []types.SlideStep
-	err = retryCall(func() error {
+	err = util.Retry(ctx, genCtx.Retry, func() error {
 		slog.Debug("generating slide steps")
-		resp, cerr := chatOnce(ctx, genCtx.Client, messages, 0.5, genCtx.Thinking)
+		resp, cerr := genCtx.Client.Chat(ctx, model.ChatRequest{
+			Messages:    messages,
+			Temperature: new(0.5),
+			Thinking:    genCtx.Thinking,
+		})
 		if cerr != nil {
 			return cerr
 		}
@@ -201,7 +208,7 @@ func generateOneImage(ctx context.Context, section *types.Section, genCtx *types
 	var lastErr error
 	for _, size := range sizes {
 		var u string
-		err := retryCall(func() error {
+		err := util.Retry(ctx, genCtx.Retry, func() error {
 			resp, gerr := genCtx.ImageClient.GenerateImage(ctx, model.ImageRequest{Prompt: el.Prompt, Size: size})
 			if gerr != nil {
 				return gerr
@@ -255,38 +262,6 @@ func dropImageElements(in []types.SlideElement) []types.SlideElement {
 		out = append(out, el)
 	}
 	return out
-}
-
-// ---- 渲染与调用 ----
-
-// renderSlideMessages 渲染给定 user 模板并拼接对应 system 提示词。
-func renderSlideMessages(tpl *template.Template, data any, system string) ([]model.ChatMessage, error) {
-	var buf bytes.Buffer
-	if err := tpl.Execute(&buf, data); err != nil {
-		return nil, fmt.Errorf("render slide prompt: %w", err)
-	}
-	return []model.ChatMessage{
-		{Role: model.RoleSystem, Content: system},
-		{Role: model.RoleUser, Content: buf.String()},
-	}, nil
-}
-
-// chatOnce 单次调用模型返回完整内容。
-func chatOnce(ctx context.Context, client model.LLMClient, messages []model.ChatMessage, temp float64, thinking string) (*model.ChatResponse, error) {
-	return client.Chat(ctx, model.ChatRequest{
-		Messages:    messages,
-		Temperature: &temp,
-		Thinking:    thinking,
-	})
-}
-
-// retryCall 执行 fn，失败重试一次（共最多 2 次尝试）。
-func retryCall(fn func() error) error {
-	err := fn()
-	if err == nil {
-		return nil
-	}
-	return fn()
 }
 
 // ---- 校验 / 清理 ----

@@ -30,11 +30,18 @@ agent-classroom/
 │   │   ├── question.go             # 测试题实体 + QuestionRepo
 │   │   ├── document.go             # 参考文档 + DocumentRepo
 │   │   ├── conversation.go         # 问答会话 Conversation/Message + Repo + DiscussionService/Sink
-│   │   └── learn.go                # 学习进度 / 问答会话相关
-│   ├── agent/                      # 统一 agent loop 封装（仅依赖 model；工具定义+执行器、
-│   │                               # 业务装配上下文、轮次上限强制收尾、逐条消息回调）
+│   │   ├── learn.go                # 学习进度 / 问答会话相关
+│   │   └── retry.go                # 生成调用重试策略 RetryPolicy（尝试次数 + 指数退避）
+│   ├── agent/                      # 统一 agent loop 封装（仅依赖 model）
+│   │   ├── agent.go                # loop 驱动：业务装配上下文、轮次上限强制收尾、逐条消息回调
+│   │   ├── tool.go                 # OpenAI 工具 schema 组装（FunctionTool/ObjectSchema）
+│   │   ├── prompt.go               # go:embed 引入 prompts/ 下的提示词（强制收尾）
+│   │   ├── prompts/force_final.md  # 轮次上限强制收尾提示词（随二进制嵌入）
+│   │   └── agent_test.go           # agent loop 单元测试
 │   ├── application/
 │   │   ├── service/                # 业务逻辑实现（依赖 repo 接口 + model 适配器）
+│   │   │   ├── course.go           # 课程 CRUD（列表/创建/文档状态）+ CourseService 结构体装配
+│   │   │   ├── generate_outline.go # 大纲生成域：任务状态机 + LLM 生成核心 + 大纲查询/版本管理
 │   │   │   ├── generator_slide.go  # Slide 环节生成
 │   │   │   ├── generator_quiz.go   # 测试题生成
 │   │   │   ├── generator_demo.go   # 互动演示生成（HTML 模板拼接 + CSP 禁网络）
@@ -66,6 +73,7 @@ agent-classroom/
 │       ├── jwt.go                  # JWT 签发/校验
 │       ├── crypto.go               # AES-256-GCM
 │       ├── document.go             # pdf/docx 文本解析
+│       ├── retry.go                # 通用重试 Retry()（指数退避 + ctx 取消，策略见 types.RetryPolicy）
 │       └── json.go                 # JSON helper
 ├── web/                            # 前端（Vue 3 + Vite + TS + Pinia + Naive UI，pnpm 管理），结构见下
 └── docs/                           # 设计文档，各文档内容见「docs 文档说明」
@@ -84,6 +92,9 @@ web/
 └── src/
     ├── main.ts                     # 入口：装配 Pinia / Router / Naive UI 主题
     ├── App.vue
+    ├── env.d.ts
+    ├── assets/main.css             # 全局样式入口
+    ├── composables/useBreakpoint.ts # 断点响应式（移动端/桌面端切换）
     ├── router/index.ts             # 路由：/login、/（课程列表）、/create、
     │                               # /course/:id/learn、/preview/:id
     ├── api/                        # HTTP 层：http.ts（axios 封装）、error.ts、token.ts
@@ -99,15 +110,18 @@ web/
     │                               # GenerateView（SSE 生成进度）、LearnView
     ├── layouts/                    # MainLayout / GenerateLayout / LearnLayout
     ├── components/
-    │   ├── app/                    # 导航栏、设置弹窗、模型配置面板
-    │   ├── course/                 # 课程卡片 / 筛选 / 网格
-    │   ├── generate/               # 大纲列表、环节生成进度
+    │   ├── app/                    # AppNavbar 导航栏、SettingsModal 设置弹窗、
+    │   │                           # ModelConfigPanel 模型配置面板
+    │   ├── course/                 # CourseCard / CourseFilters / CourseGrid
+    │   ├── generate/               # OutlineList 大纲列表、SectionProgressList 环节生成进度
     │   └── learn/                  # 学习页：StageSlide/StageQuiz/StageDemo 三类环节、
     │                               # ChatPanel（问答壳，拆出 ChatMessages/ChatComposer 复用）、
     │                               # DiscussionPanel（讨论侧板）、WhiteboardLayer（含讨论叠加层）、
-    │                               # TeacherBar（讨论中切换终止按钮）、SectionDrawer 等
-    ├── theme/                      # 设计 token + Naive UI themeOverrides（浅/深色）
-    └── __tests__/                  # vitest 单元测试
+    │                               # TeacherBar（讨论中切换终止按钮）、StageToolbar（环节工具栏，含
+    │                               # 讨论模式切换）、LeaveButton（退出课程按钮）、SectionDrawer 等
+    ├── theme/                      # index.ts（Naive UI themeOverrides 浅/深色）+ tokens.ts（设计 token）
+    └── __tests__/                  # vitest 单元测试：discussion、learnStrokes、
+                                    # learn-whiteboard、model-config、sse、token
 ```
 
 ### docs 文档说明
@@ -154,6 +168,7 @@ web/
 ## 后端编码风格约定
 
 - 使用go 1.26版本的新语法风格，比如any替换interface{}、标准库的min/max、"for i := range n"等。
+- 内联取地址用 `new(v)`：go 1.26 支持直接 `new(表达式)` 创建指针字面量，禁止编写 `util.Ptr`/`intPtr` 之类的指针辅助函数。
 - 禁止手动字符串拼接：使用strings.Join,strings.Builder等工具拼接字符串，禁止用"+"拼接。
 - 使用switch-case简化if-else结构,对于只有枚举单一条件判断的分支逻辑使用switch-case使代码更加简洁。
 - 使用fmt.FPrintf: 向符合Writer接口的结构写入字符串时，使用fmt.FPrintf替代。

@@ -104,9 +104,9 @@ type ModelConfigService interface {
 	// List 返回用户全部配置（key 掩码）。
 	List(ctx context.Context, userID ID) ([]ModelConfigInfo, error)
 	// Create 新增配置；is_default 为真时清除旧的默认标记。
-	Create(ctx context.Context, userID ID, req *CreateModelConfigReq) (*ModelConfigInfo, error)
+	Create(ctx context.Context, userID ID, req CreateModelConfigReq) (*ModelConfigInfo, error)
 	// Update 编辑配置；api_key 留空不改；切换为默认时保证唯一默认。
-	Update(ctx context.Context, userID, id ID, req *UpdateModelConfigReq) (*ModelConfigInfo, error)
+	Update(ctx context.Context, userID, id ID, req UpdateModelConfigReq) (*ModelConfigInfo, error)
 	// Delete 删除配置。
 	Delete(ctx context.Context, userID, id ID) error
 	// SetDefault 将指定配置设为该用户唯一默认。

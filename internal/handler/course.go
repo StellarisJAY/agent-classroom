@@ -32,7 +32,7 @@ func (h *CourseHandler) List(c *gin.Context) {
 		Error(c, err)
 		return
 	}
-	resp, err := h.svc.List(c.Request.Context(), userID, &req)
+	resp, err := h.svc.List(c.Request.Context(), userID, req)
 	if err != nil {
 		Error(c, err)
 		return
@@ -52,7 +52,7 @@ func (h *CourseHandler) Create(c *gin.Context) {
 		Error(c, err)
 		return
 	}
-	req := &types.CreateCourseReq{
+	req := types.CreateCourseReq{
 		Prompt:   prompt,
 		Files:    files,
 		Thinking: c.PostForm("thinking"),

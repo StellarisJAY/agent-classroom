@@ -48,7 +48,7 @@ func TestRegisterSuccess(t *testing.T) {
 		existsEmail: func(string) (bool, error) { return false, nil },
 		create:      func(u *types.User) error { u.ID = types.NewID(); return nil },
 	})
-	info, err := svc.Register(context.Background(), &types.RegisterReq{
+	info, err := svc.Register(context.Background(), types.RegisterReq{
 		Username: "alice", Email: "alice@example.com", Password: "secret123",
 	})
 	require.NoError(t, err)
@@ -61,7 +61,7 @@ func TestRegisterUsernameTaken(t *testing.T) {
 		existsUser:  func(string) (bool, error) { return true, nil },
 		existsEmail: func(string) (bool, error) { return false, nil },
 	})
-	_, err := svc.Register(context.Background(), &types.RegisterReq{
+	_, err := svc.Register(context.Background(), types.RegisterReq{
 		Username: "alice", Email: "other@example.com", Password: "secret123",
 	})
 	require.ErrorIs(t, err, types.ErrUsernameTaken)
@@ -72,7 +72,7 @@ func TestRegisterEmailTaken(t *testing.T) {
 		existsUser:  func(string) (bool, error) { return false, nil },
 		existsEmail: func(string) (bool, error) { return true, nil },
 	})
-	_, err := svc.Register(context.Background(), &types.RegisterReq{
+	_, err := svc.Register(context.Background(), types.RegisterReq{
 		Username: "alice", Email: "alice@example.com", Password: "secret123",
 	})
 	require.ErrorIs(t, err, types.ErrEmailTaken)
@@ -86,7 +86,7 @@ func TestLoginSuccessByUsername(t *testing.T) {
 			return &types.User{ID: id, Username: "alice", Email: "alice@example.com", PasswordHash: hash}, nil
 		},
 	})
-	resp, err := svc.Login(context.Background(), &types.LoginReq{Account: "alice", Password: "secret123"})
+	resp, err := svc.Login(context.Background(), types.LoginReq{Account: "alice", Password: "secret123"})
 	require.NoError(t, err)
 	require.Equal(t, id, resp.User.ID)
 	// token 可被解析
@@ -104,7 +104,7 @@ func TestLoginByEmail(t *testing.T) {
 			return &types.User{ID: id, PasswordHash: hash}, nil
 		},
 	})
-	_, err := svc.Login(context.Background(), &types.LoginReq{Account: "alice@example.com", Password: "secret123"})
+	_, err := svc.Login(context.Background(), types.LoginReq{Account: "alice@example.com", Password: "secret123"})
 	require.NoError(t, err)
 }
 
@@ -130,7 +130,7 @@ func TestLoginWrongCredentials(t *testing.T) {
 					return &types.User{ID: id, PasswordHash: hash}, nil
 				},
 			})
-			_, err := svc.Login(context.Background(), &types.LoginReq{Account: tt.account, Password: tt.pass})
+			_, err := svc.Login(context.Background(), types.LoginReq{Account: tt.account, Password: tt.pass})
 			require.ErrorIs(t, err, types.ErrBadCredentials)
 		})
 	}

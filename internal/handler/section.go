@@ -32,7 +32,7 @@ func (h *SectionHandler) Confirm(c *gin.Context) {
 		Error(c, err)
 		return
 	}
-	sections, err := h.svc.ConfirmOutline(c.Request.Context(), userID, courseID, &req)
+	sections, err := h.svc.ConfirmOutline(c.Request.Context(), userID, courseID, req)
 	if err != nil {
 		Error(c, err)
 		return

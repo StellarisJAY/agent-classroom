@@ -168,7 +168,7 @@ func TestDiscussionAskRejectsGeneratingSection(t *testing.T) {
 	}
 	svc := newDiscussionFixture(course, secs, nil, nil, nil)
 
-	err := svc.Ask(context.Background(), course.OwnerID, courseID, &types.AskQuestionReq{Question: "你好"}, &recordingSink{})
+	err := svc.Ask(context.Background(), course.OwnerID, courseID, types.AskQuestionReq{Question: "你好"}, &recordingSink{})
 	var be *types.BizError
 	require.True(t, errors.As(err, &be))
 	require.Equal(t, types.ErrDiscussionGenerating.Code, be.Code)
@@ -230,7 +230,7 @@ func TestDiscussionAskEventsAndPersistence(t *testing.T) {
 	sink := &recordingSink{}
 	section := sectionID
 	err := svc.Ask(context.Background(), course.OwnerID, courseID,
-		&types.AskQuestionReq{Question: "帮我讲一下数组", SectionID: &section, StepIndex: intPtr(0)}, sink)
+		types.AskQuestionReq{Question: "帮我讲一下数组", SectionID: &section, StepIndex: new(0)}, sink)
 	require.NoError(t, err)
 	require.True(t, sink.ended)
 	require.Empty(t, sink.errs)
@@ -281,7 +281,7 @@ func TestDiscussionQuizAnswerStripped(t *testing.T) {
 	section := sec
 	svcQuiz := newDiscussionFixture(&course, []types.Section{sec}, nil, nil, qRepo)
 	system, err := svcQuiz.buildSystem(context.Background(), &course, []types.Section{section},
-		&types.AskQuestionReq{Question: "答案是什么", SectionID: &section.ID})
+		types.AskQuestionReq{Question: "答案是什么", SectionID: &section.ID})
 	require.NoError(t, err)
 	require.Contains(t, system, "一维数组的长度必须固定吗？")
 	// 装配层硬剔除：答案与解释绝不进入提示词
@@ -326,4 +326,3 @@ func TestLRUWindowPairTrim(t *testing.T) {
 	require.Equal(t, model.RoleUser, out[0].Role)
 }
 
-func intPtr(i int) *int { return &i }

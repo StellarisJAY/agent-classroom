@@ -35,6 +35,7 @@ func quizGenCtx(client model.LLMClient) *types.GenerationContext {
 		Client:   client,
 		Thinking: model.ThinkingOff,
 		DocsText: "参考文档正文",
+		Retry:    types.RetryPolicy{MaxAttempts: 2},
 	}
 }
 

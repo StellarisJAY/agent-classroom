@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 
+	"github.com/StellarisJAY/agent-classroom/internal/config"
 	"github.com/StellarisJAY/agent-classroom/internal/model"
 	"github.com/StellarisJAY/agent-classroom/internal/model/extractor"
 	"github.com/StellarisJAY/agent-classroom/internal/types"
@@ -197,10 +198,10 @@ func (m *mockModelCfgSvc) ResolveByID(context.Context, types.ID, types.ID) (mode
 func (m *mockModelCfgSvc) List(context.Context, types.ID) ([]types.ModelConfigInfo, error) {
 	return nil, nil
 }
-func (m *mockModelCfgSvc) Create(context.Context, types.ID, *types.CreateModelConfigReq) (*types.ModelConfigInfo, error) {
+func (m *mockModelCfgSvc) Create(context.Context, types.ID, types.CreateModelConfigReq) (*types.ModelConfigInfo, error) {
 	return nil, types.ErrNotFound
 }
-func (m *mockModelCfgSvc) Update(context.Context, types.ID, types.ID, *types.UpdateModelConfigReq) (*types.ModelConfigInfo, error) {
+func (m *mockModelCfgSvc) Update(context.Context, types.ID, types.ID, types.UpdateModelConfigReq) (*types.ModelConfigInfo, error) {
 	return nil, types.ErrNotFound
 }
 func (m *mockModelCfgSvc) Delete(context.Context, types.ID, types.ID) error {
@@ -213,7 +214,7 @@ func (m *mockModelCfgSvc) SetDefault(context.Context, types.ID, types.ID) error 
 func newCourseSvc(repo types.CourseRepo) types.CourseService {
 	set := defaultMockSet()
 	set.course = repo
-	return NewCourseService(set.course, set.outline, set.history, set.doc, passTM{}, set.storage, set.cfgSvc, set.registry, newTestDocs(set.doc, set.storage))
+	return NewCourseService(set.course, set.outline, set.history, set.doc, passTM{}, set.storage, set.cfgSvc, set.registry, newTestDocs(set.doc, set.storage), &config.Config{})
 }
 
 // newTestDocs 测试用文档加载器（本地提取链 + 固定预算）。
@@ -263,9 +264,9 @@ func TestCourseListDefaults(t *testing.T) {
 			return []types.CourseListRow{{Course: mine, ProgressStatus: types.ProgressStatusInProgress}}, 1, nil
 		},
 	})
-	resp, err := svc.List(context.Background(), uid, nil)
+	resp, err := svc.List(context.Background(), uid, types.CourseListReq{})
 	require.NoError(t, err)
-	// nil req → 默认 all / 第 1 页 / 20
+	// 空请求 → 默认 all / 第 1 页 / 20
 	require.Equal(t, types.CourseScopeAll, gotFilter.Scope)
 	require.Equal(t, 1, gotFilter.Page)
 	require.Equal(t, defaultCoursePageSize, gotFilter.PageSize)
@@ -289,7 +290,7 @@ func TestCourseListFilterPassthrough(t *testing.T) {
 			return nil, 0, nil
 		},
 	})
-	_, err := svc.List(context.Background(), uid, &types.CourseListReq{
+	_, err := svc.List(context.Background(), uid, types.CourseListReq{
 		Scope: types.CourseScopeMine, Keyword: "go",
 		Progress: types.ProgressStatusUnstarted, Page: 2, PageSize: 15,
 	})
@@ -304,7 +305,7 @@ func TestCourseListInvalidScopeFallsBack(t *testing.T) {
 			return nil, 0, nil
 		},
 	})
-	_, err := svc.List(context.Background(), uid, &types.CourseListReq{Scope: "bogus"})
+	_, err := svc.List(context.Background(), uid, types.CourseListReq{Scope: "bogus"})
 	require.NoError(t, err)
 }
 
@@ -317,7 +318,7 @@ func TestCourseListOwnedFalseForOtherOwner(t *testing.T) {
 			return []types.CourseListRow{{Course: pub, ProgressStatus: types.ProgressStatusUnstarted}}, 1, nil
 		},
 	})
-	resp, err := svc.List(context.Background(), uid, &types.CourseListReq{Scope: types.CourseScopePublic})
+	resp, err := svc.List(context.Background(), uid, types.CourseListReq{Scope: types.CourseScopePublic})
 	require.NoError(t, err)
 	require.Len(t, resp.Items, 1)
 	require.False(t, resp.Items[0].Owned, "公共库他人课程 owned 应为 false")
@@ -330,18 +331,18 @@ func TestCreateRequiresPromptAndFiles(t *testing.T) {
 	uid := types.NewID()
 	svc := newCourseSvc(&mockCourseRepo{})
 
-	_, err := svc.Create(context.Background(), uid, &types.CreateCourseReq{Prompt: "  ", Files: []types.UploadedFile{{Name: "a.txt", Data: []byte("x")}}})
+	_, err := svc.Create(context.Background(), uid, types.CreateCourseReq{Prompt: "  ", Files: []types.UploadedFile{{Name: "a.txt", Data: []byte("x")}}})
 	require.ErrorIs(t, err, types.ErrPromptRequired)
 
 	// 无参考文档也允许创建（prompt 文本作为提示词依据）
-	_, err = svc.Create(context.Background(), uid, &types.CreateCourseReq{Prompt: "学习数组"})
+	_, err = svc.Create(context.Background(), uid, types.CreateCourseReq{Prompt: "学习数组"})
 	require.NoError(t, err)
 }
 
 func TestCreateRejectsUnsupportedFile(t *testing.T) {
 	uid := types.NewID()
 	svc := newCourseSvc(&mockCourseRepo{})
-	_, err := svc.Create(context.Background(), uid, &types.CreateCourseReq{
+	_, err := svc.Create(context.Background(), uid, types.CreateCourseReq{
 		Prompt: "学习数组",
 		Files:  []types.UploadedFile{{Name: "notes.exe", Data: []byte("garbage")}},
 	})
@@ -367,9 +368,10 @@ func TestCreateStoresCourseAndDocuments(t *testing.T) {
 		defaultMockSet().cfgSvc,
 		model.NewRegistry(),
 		newTestDocsMock(),
+		&config.Config{},
 	)
 
-	resp, err := svc.Create(context.Background(), uid, &types.CreateCourseReq{
+	resp, err := svc.Create(context.Background(), uid, types.CreateCourseReq{
 		Prompt: "学习数组的声明与访问",
 		Files: []types.UploadedFile{
 			{Name: "intro.md", Data: []byte("数组是…")},
@@ -401,8 +403,9 @@ func TestCreateStoresOutlineCount(t *testing.T) {
 		defaultMockSet().cfgSvc,
 		model.NewRegistry(),
 		newTestDocsMock(),
+		&config.Config{},
 	)
-	_, err := svc.Create(context.Background(), uid, &types.CreateCourseReq{
+	_, err := svc.Create(context.Background(), uid, types.CreateCourseReq{
 		Prompt:       "学习数组",
 		OutlineCount: 12,
 	})
@@ -471,6 +474,7 @@ func TestGenerateOutlineParsesAndPersists(t *testing.T) {
 		}},
 		registry,
 		newTestDocsMock(),
+		&config.Config{},
 	)
 
 	res, err := svc.(*CourseService).generateOutline(context.Background(), uid, course.ID, "")
@@ -508,6 +512,7 @@ func TestGenerateOutlineRejectsInvalidType(t *testing.T) {
 		}},
 		registry,
 		newTestDocsMock(),
+		&config.Config{},
 	)
 
 	_, err := svc.(*CourseService).generateOutline(context.Background(), uid, course.ID, "")

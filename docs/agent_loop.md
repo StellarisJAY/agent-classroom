@@ -17,6 +17,8 @@
 |---|---|
 | `Tool` | 一个可用工具 = OpenAI 协议定义（`model.Tool`）+ 执行器 `Execute(ctx, argsJSON) (result, err)`；argsJSON 为模型 arguments 原始 JSON 串，不解析透传 |
 | `SyntheticResult(result)` | 便捷执行器：忽略参数合成固定结果（讨论模式动作类工具直接用） |
+| `FunctionTool(name, desc, params)` | 组装 OpenAI function 协议工具定义 |
+| `ObjectSchema(props, required...)` | 构造 JSON Schema 的 object 字段（type/properties/required） |
 | `Handler` | 事件分发：`OnText`（文本增量）、`OnToolCall`（本轮完整调用集合，一次）、`OnMessage`（每条产出消息，用于逐条落库）；均可 nil，返回 error 中断 loop |
 | `Runner` | 无状态运行器（`Client` + `MaxTurns`，默认 8），可并发复用 |
 | `Request` | `Messages`（业务装配的初始上下文）、`Tools`（业务裁剪后的工具集）、`Handler`、`Temperature` |
