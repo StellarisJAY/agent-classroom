@@ -1,13 +1,15 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { DiscussionAction, DiscussionSSEEvent } from '@/api/discussion'
+import { mapAction, type DiscussionAction } from '@/api/discussion'
 import type { CourseLearnDetail } from '@/api/learn'
 import { useConversationStore } from '@/stores/conversation'
 import { useDiscussionStore } from '@/stores/discussion'
 import { useLearnStore } from '@/stores/learn'
 
-// 讨论流 mock：由用例注入脚本（逐帧回调驱动 discussion store 的严格队列）
+// 讨论流 mock：由用例注入脚本（逐帧回调驱动 discussion store 的严格队列）。
+// 替换 askQuestion 为注入脚本，其余（mapAction 等）保留真实实现，
+// 事件 {name,args} 经 mapAction 映射为语义动作，与 askQuestion 真实 dispatch 一致。
 type StreamHandlers = {
   onText: (d: string) => void
   onAction: (a: DiscussionAction) => void
@@ -18,16 +20,26 @@ type StreamHandlers = {
 const askQuestion = vi.fn<(cid: string, input: unknown, h: StreamHandlers, signal: AbortSignal) => Promise<void>>(
   async () => {},
 )
-vi.mock('@/api/discussion', () => ({
+vi.mock('@/api/discussion', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api/discussion')>()),
   askQuestion: (...args: Parameters<typeof askQuestion>) => askQuestion(...args),
 }))
 
-function scriptEvents(events: DiscussionSSEEvent[]) {
+type ActionScriptEvent =
+  | { type: 'text'; delta: string }
+  | { type: 'action'; name: string; args: unknown }
+  | { type: 'end' }
+  | { type: 'error'; msg: string }
+
+function scriptEvents(events: ActionScriptEvent[]) {
   askQuestion.mockImplementation(async (_cid, _input, h, signal) => {
     for (const e of events) {
       if (signal.aborted) return
       if (e.type === 'text') h.onText(e.delta)
-      else if (e.type === 'action') h.onAction(e.action)
+      else if (e.type === 'action') {
+        const action = mapAction(e.name, e.args)
+        if (action) h.onAction(action)
+      } else if (e.type === 'error') h.onError(new Error(e.msg))
       else h.onEnd()
     }
   })
@@ -74,10 +86,10 @@ describe('discussion store（讨论模式状态机）', () => {
 
   it('进入:快照 + 锁定导航 + 暂停播放；快照位置在退出后恢复', async () => {
     const learn = useLearnStore()
+    learn.courseId = 'c1'
     learn.detail = slideDetail()
     const chat = useConversationStore()
     const discussion = useDiscussionStore()
-    discussion.init('c1')
 
     // 进入讨论：位于环节 0 步骤 1
     learn.goTo(0)
@@ -106,15 +118,15 @@ describe('discussion store（讨论模式状态机）', () => {
 
   it('严格队列：action 全部落地后才渲染后续文本；jump 可解锁通道移动位置', async () => {
     const learn = useLearnStore()
+    learn.courseId = 'c1'
     learn.detail = slideDetail()
     const chat = useConversationStore()
     const discussion = useDiscussionStore()
-    discussion.init('c1')
 
     scriptEvents([
       { type: 'text', delta: '先看' },
-      { type: 'action', action: { type: 'highlight', targetElementId: 'el-1' } },
-      { type: 'action', action: { type: 'jump_to_section', section_id: 'sec-2' } },
+      { type: 'action', name: 'highlight', args: { element_id: 'el-1' } },
+      { type: 'action', name: 'jump_to_section', args: { section_id: 'sec-2' } },
       { type: 'text', delta: '后讲' },
       { type: 'end' },
     ])
@@ -139,14 +151,14 @@ describe('discussion store（讨论模式状态机）', () => {
 
   it('end 后 overlayActions 保留、stop 清叠加层并恢复快照', async () => {
     const learn = useLearnStore()
+    learn.courseId = 'c1'
     learn.detail = slideDetail()
     const discussion = useDiscussionStore()
-    discussion.init('c1')
     learn.goTo(0)
     learn.stepIndex = 1
 
     scriptEvents([
-      { type: 'action', action: { type: 'draw', drawing: { kind: 'pen', points: [[10, 10]] } } },
+      { type: 'action', name: 'draw', args: { drawing: { kind: 'pen', points: [[10, 10]] } } },
       { type: 'end' },
     ])
     discussion.start('画一下')
@@ -161,15 +173,15 @@ describe('discussion store（讨论模式状态机）', () => {
 
   it('讨论叠加笔画按当前环节画布归一化（pen 点放大到 1280×720）', async () => {
     const learn = useLearnStore()
+    learn.courseId = 'c1'
     const detail = slideDetail()
     // 产出画布 640×720 → x 缩放 ×2、y 不缩放
     detail.sections[0]!.content = { width: 640, height: 720, background: '#fff', accent: '#14b8a6', elements: [] } as never
     learn.detail = detail
     const discussion = useDiscussionStore()
-    discussion.init('c1')
 
     scriptEvents([
-      { type: 'action', action: { type: 'draw', drawing: { kind: 'pen', points: [[100, 200]] } } },
+      { type: 'action', name: 'draw', args: { drawing: { kind: 'pen', points: [[100, 200]] } } },
       { type: 'end' },
     ])
     discussion.start('看这')

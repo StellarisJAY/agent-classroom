@@ -9,7 +9,8 @@ import type { ProgressStatusValue } from './course'
  * - slide / quiz 环节由真实接口 GET /courses/:id/learn 提供
  *   （quiz 题目来自后端 question 表）；
  * - demo 后端尚未生成真实内容（仍占位），前端以 learn.mock.ts 兜底；
- * - 问答会话 / 进度上报仍为 mock（待对应接口就位后替换）。
+ * - 问答会话已走真实接口（api/discussion.ts listConversation），
+ *   进度上报仍为 mock（待对应接口就位后替换）。
  * 数据 schema 严格对齐 docs/slide数据结构.md 与 docs/数据库设计.md。
  */
 
@@ -320,12 +321,6 @@ export async function getCourseDetail(courseId: string): Promise<CourseLearnDeta
     return s
   })
   return detail
-}
-
-/** 拉取课程级问答历史（后端接口就位后替换为真实查询） */
-export async function listMessages(courseId: string): Promise<ChatMessage[]> {
-  await delay(150)
-  return mock.listMessages(courseId)
 }
 
 /** 上报学习进度 */

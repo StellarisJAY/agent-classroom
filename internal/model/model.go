@@ -33,6 +33,9 @@ type Tool struct {
 	Function ToolFunction `json:"function"`
 }
 
+// ToolCallTypeFunction 工具调用 type 字段的固定取值（OpenAI 协议）。
+const ToolCallTypeFunction = "function"
+
 // ToolCall 一条工具调用记录。Arguments 为 JSON 原始字符串（协议约定，不解析透传）。
 type ToolCall struct {
 	ID       string       `json:"id"`

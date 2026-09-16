@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -141,6 +142,7 @@ func (s *DiscussionService) Ask(ctx context.Context, userID, courseID types.ID, 
 	})
 	if err != nil {
 		sink.Error("回答过程出现异常，已中断；请重新提问")
+		slog.Error("discussion loop error", "error", err)
 		return fmt.Errorf("discussion loop: %w", err)
 	}
 	return sink.End()
@@ -470,7 +472,8 @@ func dbToChat(m types.Message) (model.ChatMessage, error) {
 			calls := make([]model.ToolCall, 0, len(mc.ToolCalls))
 			for _, tc := range mc.ToolCalls {
 				calls = append(calls, model.ToolCall{
-					ID: tc.ID,
+					ID:   tc.ID,
+					Type: model.ToolCallTypeFunction,
 					Function: model.ToolCallFunc{
 						Name:      tc.Name,
 						Arguments: tc.Arguments,

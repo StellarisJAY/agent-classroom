@@ -1,39 +1,16 @@
-import type { ChatMessage, DemoContent } from './learn'
+import type { DemoContent } from './learn'
 
 /**
- * learn mock：学习页的会话/进度/演示代码的内存态 + demo 兜底数据。
+ * learn mock：学习页的进度/演示代码的内存态 + demo 兜底数据。
  *
  * slide 的 content/steps 与 quiz 的题目已改为从真实接口获取（见 learn.ts getCourseDetail，
- * quiz 题目来自后端 question 表）；demo 后端尚未生成真实内容，故仅保留 demo 兜底。
+ * quiz 题目来自后端 question 表）；问答会话已走真实接口（api/discussion.ts
+ * listConversation）；demo 后端尚未生成真实内容，故仅保留 demo 兜底。
  */
 
 // 内存态
-const messagesByCourse = new Map<string, ChatMessage[]>()
 const progressByCourse = new Map<string, string>()
 const demoCodeBySection = new Map<string, string>()
-
-function nowIso(): string {
-  return new Date().toISOString()
-}
-
-let msgSeq = 0
-
-function seedMessages(courseId: string): ChatMessage[] {
-  const existing = messagesByCourse.get(courseId)
-  if (existing) return existing
-  const list: ChatMessage[] = [
-    {
-      id: `m${++msgSeq}`,
-      role: 'assistant',
-      content:
-        '你好，我是这节课程的智能老师。数组是一段连续内存里存储的同类型元素集合，有任何疑问都可以直接问我。',
-      section_id: null,
-      created_at: nowIso(),
-    },
-  ]
-  messagesByCourse.set(courseId, list)
-  return list
-}
 
 // ---- demo 兜底数据（后端尚未生成真实内容）----
 // 仅 demo_basic 目前可运行预览；demo_3d / demo_function 需预注入库，本期未实现。
@@ -73,12 +50,6 @@ export const DEMO_CONTENT: DemoContent = {
   </script>
 </body>
 </html>`,
-}
-
-// ---- 消息 ----
-
-export function listMessages(courseId: string): ChatMessage[] {
-  return seedMessages(courseId)
 }
 
 // ---- 变更 ----

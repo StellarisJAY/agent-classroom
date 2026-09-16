@@ -326,3 +326,54 @@ func TestLRUWindowPairTrim(t *testing.T) {
 	require.Equal(t, model.RoleUser, out[0].Role)
 }
 
+// ---------- dbToChat：历史重建 ----------
+
+// 落库消息重建为 ChatMessage：assistant tool_calls 补 type=function（上游要求必有），
+// tool / user 消息正文原样还原；损坏内容跳过不阻断。
+func TestDBToChatRebuildToolCalls(t *testing.T) {
+	content, err := json.Marshal(types.MessageContent{ToolCalls: []types.ToolCallEx{
+		{ID: "c1", Name: "highlight", Arguments: `{"element_id":"e1"}`},
+		{ID: "c2", Name: "jump_to_section", Arguments: `{"section_id":"s2"}`},
+	}})
+	require.NoError(t, err)
+	msgs := []types.Message{
+		{ID: types.NewID(), Role: types.MessageRoleUser, Content: json.RawMessage(mustJSON(t, types.MessageContent{Text: "提问"}))},
+		{ID: types.NewID(), Role: types.MessageRoleAssistant, Content: json.RawMessage(content)},
+		{ID: types.NewID(), Role: types.MessageRoleTool, Content: json.RawMessage(mustJSON(t, types.MessageContent{ToolCallID: "c1", Name: "highlight", Result: "success"}))},
+		{ID: types.NewID(), Role: types.MessageRoleAssistant, Content: json.RawMessage(mustJSON(t, types.MessageContent{Text: "收尾"}))},
+		{ID: types.NewID(), Role: "corrupt", Content: json.RawMessage(mustJSON(t, types.MessageContent{Text: "x"}))},
+	}
+
+	out, err := dbToChat(msgs[0])
+	require.NoError(t, err)
+	require.Equal(t, model.ChatMessage{Role: model.RoleUser, Content: "提问"}, out)
+
+	out, err = dbToChat(msgs[1])
+	require.NoError(t, err)
+	require.Equal(t, model.RoleAssistant, out.Role)
+	require.Len(t, out.ToolCalls, 2)
+	for _, tc := range out.ToolCalls {
+		require.Equal(t, model.ToolCallTypeFunction, tc.Type, "重建必须补 type=function")
+	}
+	require.Equal(t, "c1", out.ToolCalls[0].ID)
+	require.Equal(t, "jump_to_section", out.ToolCalls[1].Function.Name)
+
+	out, err = dbToChat(msgs[2])
+	require.NoError(t, err)
+	require.Equal(t, "c1", out.ToolCallID)
+	require.Equal(t, "success", out.Content)
+
+	out, err = dbToChat(msgs[3])
+	require.NoError(t, err)
+	require.Equal(t, "收尾", out.Content)
+
+	_, err = dbToChat(msgs[4])
+	require.Error(t, err)
+}
+
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	require.NoError(t, err)
+	return b
+}

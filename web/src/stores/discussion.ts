@@ -36,7 +36,6 @@ export const useDiscussionStore = defineStore('discussion', () => {
   /** 讨论叠加层元素强调动作（highlight/underline/box/laser，渲染在舞台 actor 区）。 */
   const overlayActions = ref<SlideAction[]>([])
 
-  let courseId = ''
   let snapshot: { index: number; stepIndex: number } | null = null
   let controller: AbortController | null = null
   let ended = false
@@ -61,14 +60,12 @@ export const useDiscussionStore = defineStore('discussion', () => {
     await p
   }
 
-  function init(id: string) {
-    courseId = id
-  }
-
   /** 提问并进入讨论模式。流内完成 agent loop；end 后可继续追问。 */
+  // 课程 id 以 learn store 为唯一真源（load 时写入），无需单独 init。
   function start(question: string): void {
     if (active.value && streaming.value) return // 同会话进行中禁并发提问
-    if (!courseId) return
+    const cid = learn.courseId
+    if (!cid) return
 
     active.value = true
     ended = false
@@ -78,13 +75,20 @@ export const useDiscussionStore = defineStore('discussion', () => {
     snapshot = learn.pausePlayback()
     learn.setSectionLocked(true)
 
+    const sectionId = learn.currentSection?.id ?? null
+
     // 讨论首问即会话首消息：直接进会话历史（乐观插入）
-    chat.pushUserMessage(question, learn.currentSection?.id ?? null)
+    chat.pushUserMessage(question, sectionId)
 
     controller = new AbortController()
     void discussionApi.askQuestion(
-      courseId,
-      { content: question, section_id: learn.currentSection?.id ?? null },
+      cid,
+      {
+        question,
+        section_id: sectionId,
+        // 提问瞬时位置仅对 slide 环节有意义（讲解步骤下标）
+        step_index: learn.isSlide ? learn.stepIndex : null,
+      },
       {
         onText: (delta) => enqueue(() => { text.value += delta }),
         onAction: (action) => enqueue(() => applyAction(action)),
@@ -207,7 +211,6 @@ export const useDiscussionStore = defineStore('discussion', () => {
     overlayActions,
     actionCapable,
     lastAction,
-    init,
     start,
     stop,
     clearOverlay,

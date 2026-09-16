@@ -99,8 +99,8 @@ web/
     │                               # /course/:id/learn、/preview/:id
     ├── api/                        # HTTP 层：http.ts（axios 封装）、error.ts、token.ts
     │   ├── auth.ts / model-config.ts / course.ts
-    │   ├── learn.ts                # 学习页接口（demo 未就绪部分由 learn.mock.ts 兜底）
-    │   ├── discussion.ts           # 讨论模式 SSE 单流接口（mock 流由 discussion.mock.ts 驱动）
+    │   ├── learn.ts                # 学习页接口（demo 未就绪部分由 learn.mock.ts 兜底；问答历史走 api/discussion.ts）
+    │   ├── discussion.ts           # 讨论模式 SSE 单流接口 + mapAction 协议转换 + 问答历史
     │   ├── sse.ts                  # 通用 SSE 消费器（fetch + ReadableStream 帧解析）
     │   └── types.ts                # 后端响应类型定义
     ├── stores/                     # Pinia：auth / course / generation / learn /
@@ -120,8 +120,8 @@ web/
     │                               # TeacherBar（讨论中切换终止按钮）、StageToolbar（环节工具栏，含
     │                               # 讨论模式切换）、LeaveButton（退出课程按钮）、SectionDrawer 等
     ├── theme/                      # index.ts（Naive UI themeOverrides 浅/深色）+ tokens.ts（设计 token）
-    └── __tests__/                  # vitest 单元测试：discussion、learnStrokes、
-                                    # learn-whiteboard、model-config、sse、token
+    └── __tests__/                  # vitest 单元测试：discussion（含 discussion-protocol 协议解析）、
+                                    # learnStrokes、learn-whiteboard、model-config、sse、token
 ```
 
 ### docs 文档说明
