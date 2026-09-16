@@ -129,6 +129,8 @@ export interface AskDiscussionInput {
   section_id?: string | null
   /** 提问时所处的讲解步骤下标（slide 环节才有意义，可空） */
   step_index?: number | null
+  /** 目标会话，可空（不传则后端隐式新建会话，即"新对话"） */
+  conversation_id?: string | null
 }
 
 export interface StreamDiscussionHandlers {
@@ -170,6 +172,7 @@ export async function askQuestion(
         question: input.question,
         section_id: input.section_id ?? null,
         step_index: input.step_index ?? null,
+        conversation_id: input.conversation_id ?? null,
       },
       signal,
       onEvent: dispatch,
@@ -180,7 +183,22 @@ export async function askQuestion(
   }
 }
 
-// ---- 问答历史（GET /courses/:id/conversation） ----
+// ---- 会话列表与问答历史 ----
+
+/** 会话列表项（GET /courses/:id/conversations）。 */
+export interface ConversationSummary {
+  id: string
+  title: string
+  update_at: string
+}
+
+/** 拉取课程下会话列表（按最近活跃倒序）。 */
+export async function listConversations(courseId: string): Promise<ConversationSummary[]> {
+  return request<ConversationSummary[]>({
+    url: `/courses/${courseId}/conversations`,
+    method: 'get',
+  })
+}
 
 /** 后端结构化消息：content 为按 role 区分的 jsonb（见 types/conversation.go MessageContent）。 */
 export interface ConversationMessage {
@@ -199,10 +217,15 @@ export interface ConversationMessageContent {
   result?: string
 }
 
-/** 拉取课程级问答历史（结构化消息，前端自行适配）。 */
-export async function listConversation(courseId: string): Promise<ConversationMessage[]> {
+/** 拉取一处会话的问答历史（结构化消息，前端自行适配）；
+ * conversation_id 缺省时返回最近活跃会话的历史。 */
+export async function listConversation(
+  courseId: string,
+  conversationId?: string | null,
+): Promise<ConversationMessage[]> {
   return request<ConversationMessage[]>({
     url: `/courses/${courseId}/conversation`,
     method: 'get',
+    params: conversationId ? { conversation_id: conversationId } : undefined,
   })
 }

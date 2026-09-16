@@ -279,17 +279,22 @@ func migrateQuestionSchema(db *gorm.DB) error {
 
 // migrateConversationSchema 创建 conversation / message 表。对齐 docs/数据库设计.md 3.8 / 3.9
 //（message.content 按讨论模式方案 §6 采用 jsonb）。
+// 兼容旧库：去除 (course_id, user_id) 唯一索引并补 title 列（多会话支持）。
 func migrateConversationSchema(db *gorm.DB) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS conversation (
 			id        uuid PRIMARY KEY,
 			course_id uuid NOT NULL REFERENCES course(id) ON DELETE CASCADE,
 			user_id   uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			title     varchar(16) NOT NULL DEFAULT '',
 			create_by uuid REFERENCES users(id) ON DELETE SET NULL,
 			create_at timestamptz NOT NULL DEFAULT now(),
 			update_at timestamptz NOT NULL DEFAULT now()
 		)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS uniq_conversation_course_user ON conversation (course_id, user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_conversation_course_user_updated
+			ON conversation (course_id, user_id, update_at DESC)`,
+		`DROP INDEX IF EXISTS uniq_conversation_course_user`,
+		`ALTER TABLE conversation ADD COLUMN IF NOT EXISTS title varchar(16) NOT NULL DEFAULT ''`,
 		`CREATE TABLE IF NOT EXISTS message (
 			id              uuid PRIMARY KEY,
 			conversation_id uuid NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,

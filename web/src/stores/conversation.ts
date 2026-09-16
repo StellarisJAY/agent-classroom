@@ -1,7 +1,12 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { listConversation, type ConversationMessage } from '@/api/discussion'
+import {
+  listConversation,
+  listConversations,
+  type ConversationMessage,
+  type ConversationSummary,
+} from '@/api/discussion'
 import type { ChatMessage } from '@/api/learn'
 import { MessageRole } from '@/api/learn'
 
@@ -33,7 +38,7 @@ function toChatMessage(m: ConversationMessage): ChatMessage | null {
   }
 }
 
-/** 课程级问答会话：消息历史 + SSE 流式接收（当前 mock 计时器驱动）。 */
+/** 课程下会话列表切换 + 当前会话：消息历史 + SSE 流式接收。 */
 export const useConversationStore = defineStore('conversation', () => {
   const courseId = ref('')
   const messages = ref<ChatMessage[]>([])
@@ -46,17 +51,36 @@ export const useConversationStore = defineStore('conversation', () => {
   /** 正在生成的增量内容（未落历史前的临时缓冲区） */
   const streamContent = ref('')
 
+  /** 会话列表（按最近活跃倒序，后端排序）。 */
+  const conversations = ref<ConversationSummary[]>([])
+  /** 当前会话 id；null 表示"新对话"尚未落库（首问后由后端隐式创建）。 */
+  const activeId = ref<string | null>(null)
+
   const lastMessage = computed(() => messages.value[messages.value.length - 1] ?? null)
+  /** 当前会话标题（未落库的新会话显示占位）。 */
+  const activeTitle = computed(
+    () => conversations.value.find((c) => c.id === activeId.value)?.title || '新对话',
+  )
 
   /** 讨论模式面板展示的"讨论流中断"提示（讨论 store 写入，面板展示后清除）。 */
   const streamError = ref('')
 
+  function adaptMessages(raw: ConversationMessage[]): ChatMessage[] {
+    return raw.map(toChatMessage).filter((m): m is ChatMessage => m !== null)
+  }
+
   async function init(id: string) {
     courseId.value = id
     loading.value = true
+    if (!activeId.value) resetConversation()
     try {
-      const raw = await listConversation(id)
-      messages.value = raw.map(toChatMessage).filter((m): m is ChatMessage => m !== null)
+      conversations.value = await listConversations(id).catch(() => [])
+      // 默认激活最近活跃会话；无会话保持"新对话"。
+      activeId.value = conversations.value[0]?.id ?? null
+      if (activeId.value) {
+        const raw = await listConversation(id, activeId.value)
+        messages.value = adaptMessages(raw)
+      }
       initialized.value = true
     } catch {
       messages.value = [] // 历史拉取失败不阻塞进入学习页，讨论仍可提问
@@ -64,6 +88,51 @@ export const useConversationStore = defineStore('conversation', () => {
     } finally {
       loading.value = false
     }
+  }
+
+  /** 刷新会话列表（首问后调用，同步新会话的 id 与标题）。 */
+  async function refreshConversations(): Promise<void> {
+    if (!courseId.value) return
+    try {
+      conversations.value = await listConversations(courseId.value)
+      // 新会话首问落库后关联其 id（前端在提问前不知道会话 id，由列表头部对齐）。
+      if (!activeId.value) activeId.value = conversations.value[0]?.id ?? null
+    } catch {
+      // 列表刷新失败不影响当前会话继续使用
+    }
+  }
+
+  /** 新对话：清空当前消息并置空 activeId（首问后 refreshConversations 关联）。 */
+  function newConversation(): void {
+    activeId.value = null
+    messages.value = []
+    streamContent.value = ''
+    streamError.value = ''
+  }
+
+  /** 切换历史会话。 */
+  async function switchConversation(id: string): Promise<void> {
+    if (id === activeId.value) return
+    activeId.value = id
+    loading.value = true
+    try {
+      const raw = await listConversation(courseId.value, id)
+      messages.value = adaptMessages(raw)
+      streamContent.value = ''
+      streamError.value = ''
+    } catch {
+      messages.value = []
+    } finally {
+      loading.value = false
+    }
+  }
+
+  function resetConversation(): void {
+    conversations.value = []
+    activeId.value = null
+    messages.value = []
+    streamContent.value = ''
+    streamError.value = ''
   }
 
   // ---- 讨论模式写入通道（discussion store 落库用；提问入口统一在 discussion.start） ----
@@ -110,10 +179,9 @@ export const useConversationStore = defineStore('conversation', () => {
 
   function reset() {
     courseId.value = ''
-    messages.value = []
+    resetConversation()
     initialized.value = false
     streaming.value = false
-    streamContent.value = ''
     open.value = false
   }
 
@@ -126,8 +194,14 @@ export const useConversationStore = defineStore('conversation', () => {
     streaming,
     streamContent,
     streamError,
+    conversations,
+    activeId,
+    activeTitle,
     lastMessage,
     init,
+    refreshConversations,
+    newConversation,
+    switchConversation,
     openPanel,
     closePanel,
     pushUserMessage,

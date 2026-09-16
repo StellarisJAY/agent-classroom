@@ -19,20 +19,51 @@ import (
 
 // ---------- 讨论模式（discussion.go）单测 ----------
 
-// recordingConvRepo 内存记录 Append 的序列，供 ListMessages 回放。
+// recordingConvRepo 内存记录会话与 Append 的序列，供 ListMessages 回放。
 type recordingConvRepo struct {
-	mu    sync.Mutex
-	convs map[types.ID][]types.Message
+	mu     sync.Mutex
+	convs  map[types.ID][]types.Message
+	titles map[types.ID]string
 }
 
 var _ types.ConversationRepo = (*recordingConvRepo)(nil)
 
-func (r *recordingConvRepo) GetOrCreate(_ context.Context, courseID, userID types.ID) (*types.Conversation, error) {
+func (r *recordingConvRepo) Create(_ context.Context, courseID, userID types.ID) (*types.Conversation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	conv := &types.Conversation{ID: types.NewID(), CourseID: courseID, UserID: userID}
 	r.convs[conv.ID] = nil
 	return conv, nil
+}
+
+func (r *recordingConvRepo) GetByID(_ context.Context, userID, id types.ID) (*types.Conversation, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.convs[id]; !ok {
+		return nil, types.ErrNotFound
+	}
+	return &types.Conversation{ID: id, UserID: userID, Title: r.title(id)}, nil
+}
+
+func (r *recordingConvRepo) ListByCourse(_ context.Context, courseID, userID types.ID) ([]types.Conversation, error) {
+	return nil, nil
+}
+
+// UpdateTitle 记录 title 写入（仅在原 title 为空时生效，与真实现语义一致）。
+func (r *recordingConvRepo) UpdateTitle(_ context.Context, id types.ID, title string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.convs[id]; !ok {
+		return types.ErrNotFound
+	}
+	if _, taken := r.titles[id]; !taken {
+		r.titles[id] = title
+	}
+	return nil
+}
+
+func (r *recordingConvRepo) title(id types.ID) string {
+	return r.titles[id]
 }
 
 func (r *recordingConvRepo) ListMessages(_ context.Context, conversationID types.ID) ([]types.Message, error) {
@@ -57,7 +88,7 @@ func (r *recordingConvRepo) Append(_ context.Context, conversationID types.ID, r
 }
 
 func newRecordingConvRepo() *recordingConvRepo {
-	return &recordingConvRepo{convs: make(map[types.ID][]types.Message)}
+	return &recordingConvRepo{convs: make(map[types.ID][]types.Message), titles: make(map[types.ID]string)}
 }
 
 // recordingSink 记录 SSE 事件序列的 types.DiscussionSink 实现。
@@ -296,6 +327,56 @@ func convRepoPendingID(_ *testing.T, r *recordingConvRepo) types.ID {
 		return id
 	}
 	return types.NilID
+}
+
+// ---------- 会话解析与标题 ----------
+
+// 隐式新会话（req.ConversationID 为空）首问时以提问前 10 字写入标题；后续提问不改标题。
+func TestDiscussionAskTitleFromFirstQuestion(t *testing.T) {
+	courseID := types.NewID()
+	course := &types.Course{ID: courseID, OwnerID: types.NewID(), Title: "t", Status: types.CourseStatusCompleted, Thinking: "default"}
+	convRepo := newRecordingConvRepo()
+	svc := newDiscussionFixture(course, nil, nil, convRepo, nil)
+
+	q1 := "一维数组下标从零开始计数还是从一开始计数？请讲解"
+	err := svc.Ask(context.Background(), course.OwnerID, courseID, types.AskQuestionReq{Question: q1}, &recordingSink{})
+	require.NoError(t, err)
+	convRepo.mu.Lock()
+	var firstID types.ID
+	for id := range convRepo.titles {
+		firstID = id
+	}
+	title := convRepo.titles[firstID]
+	convRepo.mu.Unlock()
+	require.Equal(t, "一维数组下标从零开始", title)
+	require.Len(t, []rune(title), 10)
+
+	// 第二问不变更标题
+	err = svc.Ask(context.Background(), course.OwnerID, courseID, types.AskQuestionReq{Question: "第二问"}, &recordingSink{})
+	require.NoError(t, err)
+	convRepo.mu.Lock()
+	title2 := convRepo.titles[firstID]
+	convRepo.mu.Unlock()
+	require.Equal(t, title, title2)
+}
+
+// 指定不存在的会话 ID 返回 ErrConversationNotFound。
+func TestDiscussionAskUnknownConversation(t *testing.T) {
+	courseID := types.NewID()
+	course := &types.Course{ID: courseID, OwnerID: types.NewID(), Title: "t", Status: types.CourseStatusCompleted, Thinking: "default"}
+	svc := newDiscussionFixture(course, nil, nil, nil, nil)
+	cid := types.NewID()
+	err := svc.Ask(context.Background(), course.OwnerID, courseID,
+		types.AskQuestionReq{Question: "你好", ConversationID: &cid}, &recordingSink{})
+	var be *types.BizError
+	require.True(t, errors.As(err, &be))
+	require.Equal(t, types.ErrConversationNotFound.Code, be.Code)
+}
+
+// conversationTitle：按 rune 截断前 10 字，去除首尾空白。
+func TestConversationTitle(t *testing.T) {
+	require.Equal(t, "短标题", conversationTitle("  短标题 "))
+	require.Equal(t, "一二三四五六七八九十", conversationTitle("一二三四五六七八九十十一十二"))
 }
 
 // ---------- lruWindow ----------

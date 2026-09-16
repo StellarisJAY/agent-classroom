@@ -12,6 +12,7 @@ import StageQuiz from '@/components/learn/StageQuiz.vue'
 import StageSlide from '@/components/learn/StageSlide.vue'
 import StageToolbar from '@/components/learn/StageToolbar.vue'
 import TeacherBar from '@/components/learn/TeacherBar.vue'
+import WhiteboardViewSwitch from '@/components/learn/WhiteboardViewSwitch.vue'
 import { useIsMobile } from '@/composables/useBreakpoint'
 import { useConversationStore } from '@/stores/conversation'
 import { useDiscussionStore } from '@/stores/discussion'
@@ -65,13 +66,22 @@ function retry() {
     <header class="learn-view__header">
       <leave-button />
       <h1 v-if="store.detail" class="learn-view__title">{{ store.detail.course.title }}</h1>
+      <!-- 讨论模式时工具栏隐藏：白板视图切换兜底挂顶栏（PC/移动端共用） -->
+      <whiteboard-view-switch
+        v-if="store.detail && store.isSlide && discussion.active"
+        class="learn-view__wb-switch"
+      />
       <span v-if="store.detail" class="learn-view__progress" :data-p="store.progress">
         {{ progressLabel[store.progress] }}
       </span>
     </header>
 
     <!-- 主舞台：桌面端讨论模式时右侧固定 360px 侧板占布局；移动端侧板转底部 sheet -->
-    <main class="learn-view__stage" :class="{ 'is-discussion': discussion.active && !isMobile }" aria-live="polite">
+    <main
+      class="learn-view__stage"
+      :class="{ 'is-discussion': discussion.active && !isMobile, 'is-sheet-open': discussion.active && isMobile }"
+      aria-live="polite"
+    >
       <n-spin v-if="store.loading" class="learn-view__center" />
 
       <div v-else-if="store.error" class="learn-view__center">
@@ -126,11 +136,13 @@ function retry() {
       </aside>
     </main>
 
-    <!-- 统一工具栏：步骤切换/提交(中) + 大纲(右) -->
-    <StageToolbar v-if="store.detail" />
+    <!-- 统一工具栏：步骤切换/提交(中) + 大纲(右)；讨论激活时隐藏（移动端本就
+         被底部 sheet 覆盖，统一行为给 PC 让出更多对话/舞台空间） -->
+    <StageToolbar v-if="store.detail && !discussion.active" />
 
-    <!-- 底部老师旁白（当前环节未生成完成时隐藏） -->
-    <TeacherBar v-if="store.detail && !store.pendingSection" />
+    <!-- 底部老师旁白（环节生成中或讨论激活时隐藏：讨论旁白由 DiscussionPanel 实时渲染，
+         终止入口在 DiscussionPanel 头部） -->
+    <TeacherBar v-if="store.detail && !store.pendingSection && !discussion.active" />
 
     <!-- 问答抽屉 -->
     <ChatPanel />
@@ -142,6 +154,8 @@ function retry() {
   height: 100%;
   display: flex;
   flex-direction: column;
+  /* 移动端讨论 sheet 高度，舞台同量预留 padding 以免内容被盖住 */
+  --learn-sheet-h: 46vh;
 }
 
 .learn-view__header {
@@ -165,6 +179,9 @@ function retry() {
   color: var(--app-text-2, #64748b);
   border: 1px solid var(--app-divider, #e2e8f0);
 }
+.learn-view__header:has(.learn-view__wb-switch) .learn-view__progress {
+  margin-left: 0;
+}
 .learn-view__progress[data-p='in_progress'] {
   color: #0d9488;
   border-color: currentColor;
@@ -187,7 +204,7 @@ function retry() {
   min-width: 0;
 }
 .learn-view__discussion {
-  flex: 0 0 360px;
+  flex: 0 0 420px;
   min-height: 0;
   border-left: 1px solid var(--app-divider, #e2e8f0);
 }
@@ -199,7 +216,7 @@ function retry() {
   right: 0;
   bottom: 0;
   flex: none;
-  height: 46%;
+  height: var(--learn-sheet-h, 46vh);
   border-left: none;
   border-top: 1px solid var(--app-divider, #e2e8f0);
   box-shadow: 0 -6px 24px rgba(15, 23, 42, 0.12);
@@ -287,6 +304,10 @@ function retry() {
   .learn-view__stage {
     overflow-y: auto;
     overflow-x: hidden;
+  }
+  /* 讨论模式：为底部固定 sheet 预留同高空间，slide/quiz/demo 在剩余上半区居中，不再与 sheet 重合 */
+  .learn-view__stage.is-sheet-open {
+    padding-bottom: var(--learn-sheet-h);
   }
   .learn-view__stage-inner[data-type='slide'],
   .learn-view__stage-inner[data-type='quiz'],

@@ -39,11 +39,13 @@ type ToolCallEx struct {
 	Arguments string `json:"arguments"`
 }
 
-// Conversation 课程级问答会话实体，每用户每课程一条，跨环节共享。
+// Conversation 用户课程下的问答会话实体（每用户每课程可建多条）。
+// Title 为会话标题：首问时按用户提问前 10 个字符写入（其余提问不更新）。
 type Conversation struct {
 	ID       ID        `gorm:"type:uuid;primaryKey" json:"id"`
 	CourseID ID        `gorm:"type:uuid;not null" json:"course_id"`
 	UserID   ID        `gorm:"type:uuid;not null" json:"user_id"`
+	Title    string    `gorm:"type:varchar(16);not null;default:''" json:"title"`
 	CreateBy *ID       `gorm:"type:uuid" json:"-"`
 	CreateAt time.Time `gorm:"not null;default:now()" json:"create_at"`
 	UpdateAt time.Time `gorm:"not null;default:now()" json:"update_at"`
@@ -66,9 +68,14 @@ func (Message) TableName() string { return "message" }
 
 // ConversationRepo 问答会话数据访问接口。
 type ConversationRepo interface {
-	// GetOrCreate 取（或建）某用户某课程的唯一会话。
-	// 实现须应对 (course_id, user_id) 唯一约束下的并发首提问。
-	GetOrCreate(ctx context.Context, courseID, userID ID) (*Conversation, error)
+	// Create 新建一条空会话（title 为空，首问时写入标题）。
+	Create(ctx context.Context, courseID, userID ID) (*Conversation, error)
+	// GetByID 按会话 ID 取会话（校验属主：user_id 必须匹配，不匹配按 not found 处理）。
+	GetByID(ctx context.Context, userID, id ID) (*Conversation, error)
+	// ListByCourse 返回某用户某课程的全部会话，按 update_at 降序（最近活跃在前）。
+	ListByCourse(ctx context.Context, courseID, userID ID) ([]Conversation, error)
+	// UpdateTitle 更新会话标题并刷新 update_at（同一事务保证一致）。
+	UpdateTitle(ctx context.Context, id ID, title string) error
 	// ListMessages 按时间升序返回会话全部消息。
 	ListMessages(ctx context.Context, conversationID ID) ([]Message, error)
 	// Append 追加一条消息并刷新会话 update_at。
@@ -85,6 +92,15 @@ type AskQuestionReq struct {
 	SectionID *ID `json:"section_id,omitempty"`
 	// StepIndex 提问时前端所处的讲解步骤下标（前端瞬时态，仅用于上下文标注）。
 	StepIndex *int `json:"step_index,omitempty"`
+	// ConversationID 目标会话（可空：不传则隐式新建一条会话，即"新对话"）。
+	ConversationID *ID `json:"conversation_id,omitempty"`
+}
+
+// ConversationItemResp 会话列表项（GET /courses/:id/conversations）。
+type ConversationItemResp struct {
+	ID       ID        `json:"id"`
+	Title    string    `json:"title"`
+	UpdateAt time.Time `json:"update_at"`
 }
 
 // ConversationMessageResp 问答历史消息项（GET /courses/:id/conversation）。
@@ -101,8 +117,10 @@ type ConversationMessageResp struct {
 var (
 	// ErrDiscussionGenerating 课程内容尚未全部生成完成，禁止进入讨论
 	ErrDiscussionGenerating = NewError(CodeConflict, "课程内容生成中，暂不能提问")
-	// ErrDiscussionBusy 同一课程的问答会话已有提问在处理中
+	// ErrDiscussionBusy 同一会话已有提问在处理中
 	ErrDiscussionBusy = NewError(CodeConflict, "上一条提问还在回答中，请稍后再试")
+	// ErrConversationNotFound 会话不存在或不属于当前用户
+	ErrConversationNotFound = NewError(CodeNotFound, "会话不存在")
 )
 
 // ---- 接口 ----
@@ -123,8 +141,13 @@ type DiscussionSink interface {
 // DiscussionService 讨论模式业务接口。
 type DiscussionService interface {
 	// Ask 处理一次提问：服务端装配上下文 → 跑 agent loop → 事件经 sink 流出 →
-	// 逐条落库。返回 error 表示 loop 失败（含业务校验类错误与 LLM 失败）。
+	// 逐条落库。req.ConversationID 为空时隐式新建会话（新对话）。
+	// 会话首次提问时以其前 10 个字符作为会话标题。
+	// 返回 error 表示 loop 失败（含业务校验类错误与 LLM 失败）。
 	Ask(ctx context.Context, userID, courseID ID, req AskQuestionReq, sink DiscussionSink) error
-	// ListConversation 返回课程级问答历史的结构化消息（前端按末态规则重放动作）。
-	ListConversation(ctx context.Context, userID, courseID ID) ([]ConversationMessageResp, error)
+	// ListConversations 返回某课程下当前用户全部会话（按最近活跃倒序）。
+	ListConversations(ctx context.Context, userID, courseID ID) ([]ConversationItemResp, error)
+	// ListConversation 返回指定会话的问答历史结构化消息（前端按末态规则重放动作）。
+	// conversationID 为空时取最近活跃会话（无会话返回空数组）。
+	ListConversation(ctx context.Context, userID, courseID, conversationID ID) ([]ConversationMessageResp, error)
 }

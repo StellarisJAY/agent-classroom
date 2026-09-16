@@ -1,19 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { NButton, NDropdown, NIcon, NTooltip } from 'naive-ui'
+import { NButton, NDropdown, NIcon } from 'naive-ui'
 import {
   ChevronBack,
   ChevronForwardOutline,
-  CreateOutline,
-  LayersOutline,
   PauseOutline,
   PlayOutline,
-  ReaderOutline,
 } from '@vicons/ionicons5'
 
 import SectionDrawer from '@/components/learn/SectionDrawer.vue'
+import WhiteboardViewSwitch from '@/components/learn/WhiteboardViewSwitch.vue'
 import { useLearnStore } from '@/stores/learn'
-import type { SlideView } from '@/api/learn'
 
 const store = useLearnStore()
 
@@ -33,13 +30,6 @@ const rateOptions = [
 ]
 
 const playRateLabel = computed(() => `${store.playRate}x`)
-
-// 白板视图三态图标切换（radio 语义：当前视图按钮高亮）
-const VIEW_ICONS: { view: SlideView; icon: typeof ReaderOutline; tip: string }[] = [
-  { view: 'slide', icon: ReaderOutline, tip: '仅幻灯片' },
-  { view: 'overlay', icon: LayersOutline, tip: '幻灯片 + 板书' },
-  { view: 'board', icon: CreateOutline, tip: '纯白板' },
-]
 </script>
 
 <template>
@@ -105,27 +95,7 @@ const VIEW_ICONS: { view: SlideView; icon: typeof ReaderOutline; tip: string }[]
         </n-dropdown>
 
         <!-- 白板视图三态切换：仅幻灯片 / 幻灯片+板书 / 纯白板 -->
-        <div class="stage-toolbar__views" role="radiogroup" aria-label="白板视图">
-          <n-tooltip v-for="v in VIEW_ICONS" :key="v.view" trigger="hover">
-            <template #trigger>
-              <n-button
-                quaternary
-                circle
-                size="small"
-                role="radio"
-                :aria-checked="store.manualView === v.view"
-                :aria-label="v.tip"
-                :type="store.manualView === v.view ? 'primary' : 'default'"
-                @click="store.setSlideView(v.view)"
-              >
-                <template #icon>
-                  <n-icon :size="17"><component :is="v.icon" /></n-icon>
-                </template>
-              </n-button>
-            </template>
-            {{ v.tip }}
-          </n-tooltip>
-        </div>
+        <WhiteboardViewSwitch />
       </template>
 
       <!-- quiz：提交答案 -->
@@ -202,12 +172,6 @@ const VIEW_ICONS: { view: SlideView; icon: typeof ReaderOutline; tip: string }[]
   color: var(--app-text-2, #64748b);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-}
-
-.stage-toolbar__views {
-  display: flex;
-  align-items: center;
-  gap: 2px;
 }
 
 .stage-toolbar__placeholder {

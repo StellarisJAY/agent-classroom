@@ -286,12 +286,11 @@ defineExpose({
     :class="`is-${view}`"
     :style="{ width: `${displaySize.w}px`, height: `${displaySize.h}px` }"
   >
-    <canvas ref="canvasRef" class="whiteboard-layer__canvas" :style="displaySize" />
+    <canvas ref="canvasRef" class="whiteboard-layer__canvas" />
     <canvas
       v-if="overlayStrokes.length"
       ref="overlayCanvasRef"
       class="whiteboard-layer__canvas whiteboard-layer__overlay"
-      :style="displaySize"
       aria-label="讨论模式手绘叠加层"
     />
   </div>
@@ -309,6 +308,10 @@ defineExpose({
 }
 .whiteboard-layer__canvas {
   display: block;
+  /* 显示尺寸恒等于容器（即 slide 逻辑尺寸 × scale），
+     位图属性按 devicePixelRatio 的超采样在 CSS 缩放中还原，保证高 DPI 下与 slide 对齐 */
+  width: 100%;
+  height: 100%;
 }
 .whiteboard-layer__overlay {
   position: absolute;

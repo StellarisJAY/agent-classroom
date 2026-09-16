@@ -36,8 +36,7 @@ type DiscussionService struct {
 
 	// running 进行中会话（per-conversation 串行）：同会话进行中提问直接拒绝。
 	mu      sync.Mutex
-	running map[types.ID]struct{}
-}
+	running map[types.ID]struct{}}
 
 var _ types.DiscussionService = (*DiscussionService)(nil)
 
@@ -61,11 +60,41 @@ func NewDiscussionService(
 	}
 }
 
+// resolveConversation 解析本次提问的目标会话：
+// req.ConversationID 非空则取该会话（校验属主），否则隐式新建一条会话（新对话）。
+func (s *DiscussionService) resolveConversation(ctx context.Context, userID, courseID types.ID, req types.AskQuestionReq) (*types.Conversation, error) {
+	if req.ConversationID != nil && *req.ConversationID != types.NilID {
+		conv, err := s.convRepo.GetByID(ctx, userID, *req.ConversationID)
+		if err != nil {
+			if errors.Is(err, types.ErrNotFound) {
+				return nil, types.ErrConversationNotFound
+			}
+			return nil, err
+		}
+		return conv, nil
+	}
+	conv, err := s.convRepo.Create(ctx, courseID, userID)
+	if err != nil {
+		return nil, err
+	}
+	// 新建的会话对象还未写 title；首问在 Ask 内统一写入。
+	return conv, nil
+}
+
+// conversationTitle 取提问前 10 个字符作为会话标题。
+func conversationTitle(question string) string {
+	q := strings.TrimSpace(question)
+	if r := []rune(q); len(r) > 10 {
+		return string(r[:10])
+	}
+	return q
+}
+
 // Ask 处理一次提问。整体流程：
 //
-//	课程校验（owner + 全部环节 done）→ 取会话 → 落库 user 消息 →
-//	装配 system（人设 + 课程 上下文 + 历史窗口） → agent.Runner.Run（工具合成 success）→
-//	OnText/OnToolCall → sink，OnMessage → 逐条落库。
+//	课程校验（owner + 全部环节 done）→ 解析会话（指定或隐式新建）→ 落库 user 消息
+//	（首问时以提问前 10 字写入会话标题）→ 装配 system（人设 + 课程 上下文 + 历史窗口）→
+//	agent.Runner.Run（工具合成 success）→ OnText/OnToolCall → sink，OnMessage → 逐条落库。
 func (s *DiscussionService) Ask(ctx context.Context, userID, courseID types.ID, req types.AskQuestionReq, sink types.DiscussionSink) error {
 	course, err := s.courseRepo.GetByID(ctx, userID, courseID)
 	if err != nil {
@@ -84,30 +113,30 @@ func (s *DiscussionService) Ask(ctx context.Context, userID, courseID types.ID, 
 			return types.ErrDiscussionGenerating
 		}
 	}
+
+	// 解析会话在锁之前：锁按会话粒度，不同会话可并行提问。
+	conv, err := s.resolveConversation(ctx, userID, course.ID, req)
+	if err != nil {
+		return err
+	}
+
 	discussionClient, thinking, err := s.resolveClient(ctx, userID, course)
 	if err != nil {
 		return err
 	}
 
 	// per-conversation 并发锁。
-	if !s.tryLock(course.ID) {
+	if !s.tryLock(conv.ID) {
 		return types.ErrDiscussionBusy
 	}
-	defer s.unlock(course.ID)
-
-	conv, err := s.convRepo.GetOrCreate(ctx, course.ID, userID)
-	if err != nil {
-		return err
-	}
+	defer s.unlock(conv.ID)
 
 	// 提问先落库（带来源环节），随后的 loop 消息逐条追加。
-	questionRaw, err := json.Marshal(types.MessageContent{Text: req.Question})
-	if err != nil {
+	if err := s.appendMessage(ctx, conv.ID, req.SectionID, model.ChatMessage{Role: model.RoleUser, Content: req.Question}); err != nil {
 		return err
 	}
-	if err := s.convRepo.Append(ctx, conv.ID, types.MessageRoleUser, questionRaw, req.SectionID); err != nil {
-		return err
-	}
+	// 会话首次提问：以提问前 10 个字符作为标题（repo 层仅在 title 为空时写入）。
+	_ = s.convRepo.UpdateTitle(ctx, conv.ID, conversationTitle(req.Question))
 	// 构建agent上下文
 	messages, err := s.buildMessages(ctx, course, secs, req, conv.ID)
 	if err != nil {
@@ -148,19 +177,55 @@ func (s *DiscussionService) Ask(ctx context.Context, userID, courseID types.ID, 
 	return sink.End()
 }
 
-// ListConversation 返回课程级问答历史（仅 owner）。
-func (s *DiscussionService) ListConversation(ctx context.Context, userID, courseID types.ID) ([]types.ConversationMessageResp, error) {
+// ListConversations 返回某课程下当前用户全部会话（按最近活跃倒序）。
+func (s *DiscussionService) ListConversations(ctx context.Context, userID, courseID types.ID) ([]types.ConversationItemResp, error) {
 	if _, err := s.courseRepo.GetByID(ctx, userID, courseID); err != nil {
 		if errors.Is(err, types.ErrNotFound) {
 			return nil, types.ErrCourseNotFound
 		}
 		return nil, err
 	}
-	conv, err := s.convRepo.GetOrCreate(ctx, courseID, userID)
+	convs, err := s.convRepo.ListByCourse(ctx, courseID, userID)
 	if err != nil {
 		return nil, err
 	}
-	msgs, err := s.convRepo.ListMessages(ctx, conv.ID)
+	out := make([]types.ConversationItemResp, 0, len(convs))
+	for _, c := range convs {
+		out = append(out, types.ConversationItemResp{
+			ID:       c.ID,
+			Title:    c.Title,
+			UpdateAt: c.UpdateAt,
+		})
+	}
+	return out, nil
+}
+
+// ListConversation 返回指定会话的问答历史（仅 owner）；conversationID 为空时
+// 取最近活跃会话，课程尚无会话返回空数组（不隐式建会话）。
+func (s *DiscussionService) ListConversation(ctx context.Context, userID, courseID, conversationID types.ID) ([]types.ConversationMessageResp, error) {
+	if _, err := s.courseRepo.GetByID(ctx, userID, courseID); err != nil {
+		if errors.Is(err, types.ErrNotFound) {
+			return nil, types.ErrCourseNotFound
+		}
+		return nil, err
+	}
+	convID := conversationID
+	if convID == types.NilID {
+		convs, err := s.convRepo.ListByCourse(ctx, courseID, userID)
+		if err != nil {
+			return nil, err
+		}
+		if len(convs) == 0 {
+			return []types.ConversationMessageResp{}, nil
+		}
+		convID = convs[0].ID
+	} else if _, err := s.convRepo.GetByID(ctx, userID, convID); err != nil {
+		if errors.Is(err, types.ErrNotFound) {
+			return nil, types.ErrConversationNotFound
+		}
+		return nil, err
+	}
+	msgs, err := s.convRepo.ListMessages(ctx, convID)
 	if err != nil {
 		return nil, err
 	}

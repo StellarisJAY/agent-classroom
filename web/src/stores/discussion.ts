@@ -39,6 +39,8 @@ export const useDiscussionStore = defineStore('discussion', () => {
   let snapshot: { index: number; stepIndex: number } | null = null
   let controller: AbortController | null = null
   let ended = false
+  /** 本轮提问已收尾（end/error）；讨论侧切换会话须以此判断。 */
+  let conversationEnded = true
 
     /** 讨论是否发生在一个可执行舞台动作的环节上（demo 仅文本 + jump）。 */
   const actionCapable = computed(() => learn.isSlide)
@@ -60,7 +62,8 @@ export const useDiscussionStore = defineStore('discussion', () => {
     await p
   }
 
-  /** 提问并进入讨论模式。流内完成 agent loop；end 后可继续追问。 */
+  /** 提问并进入讨论模式。流内完成 agent loop；end 后可继续追问。
+   *  会话归属：提问携带 conversation store 的当前会话（null = 新对话，后端隐式建并回填）。 */
   // 课程 id 以 learn store 为唯一真源（load 时写入），无需单独 init。
   function start(question: string): void {
     if (active.value && streaming.value) return // 同会话进行中禁并发提问
@@ -76,6 +79,8 @@ export const useDiscussionStore = defineStore('discussion', () => {
     learn.setSectionLocked(true)
 
     const sectionId = learn.currentSection?.id ?? null
+    const conversationId = chat.activeId ?? null
+    conversationEnded = false
 
     // 讨论首问即会话首消息：直接进会话历史（乐观插入）
     chat.pushUserMessage(question, sectionId)
@@ -88,6 +93,7 @@ export const useDiscussionStore = defineStore('discussion', () => {
         section_id: sectionId,
         // 提问瞬时位置仅对 slide 环节有意义（讲解步骤下标）
         step_index: learn.isSlide ? learn.stepIndex : null,
+        conversation_id: conversationId,
       },
       {
         onText: (delta) => enqueue(() => { text.value += delta }),
@@ -110,6 +116,14 @@ export const useDiscussionStore = defineStore('discussion', () => {
       chat.setStreamError(err) // 面板展示"讨论流中断"
     }
     ended = true
+    if (reason !== EndReason.user) {
+      // 本轮（尤其新会话首问）结束后刷新会话列表：新会话关联 id、标题回到列表。
+      void chat.refreshConversations().then(() => {
+        conversationEnded = true
+      })
+    } else {
+      conversationEnded = true
+    }
   }
 
   /** 终止讨论：中止流 → 清叠加层 → 恢复快照 → 解锁导航 → 回到讲解。 */
@@ -198,8 +212,12 @@ export const useDiscussionStore = defineStore('discussion', () => {
     snapshot = null
     controller = null
     ended = false
+    conversationEnded = true
     chain = Promise.resolve()
   }
+
+  /** 是否允许在会话面板执行"新对话/切换历史"（讨论收尾后才行，叠加层动作进行中禁用）。 */
+  const sessionSwitchable = computed(() => !active.value || (!streaming.value && conversationEnded))
 
   // 暴露 drain 便于测试与组件在退出前确保队列排空
   return {
@@ -211,6 +229,7 @@ export const useDiscussionStore = defineStore('discussion', () => {
     overlayActions,
     actionCapable,
     lastAction,
+    sessionSwitchable,
     start,
     stop,
     clearOverlay,

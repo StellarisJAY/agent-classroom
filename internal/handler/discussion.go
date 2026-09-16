@@ -73,7 +73,27 @@ func (h *DiscussionHandler) AskQuestion(c *gin.Context) {
 	_ = h.svc.Ask(c.Request.Context(), userID, courseID, req, discussionSSESink{w: w})
 }
 
-// ListConversation 拉取课程级问答历史（结构化消息，前端按末态规则重放动作）。
+// ListConversations 拉取课程下的会话列表（按最近活跃倒序）。
+func (h *DiscussionHandler) ListConversations(c *gin.Context) {
+	userID, ok := currentUser(c)
+	if !ok {
+		return
+	}
+	courseID, err := pathID(c)
+	if err != nil {
+		Error(c, err)
+		return
+	}
+	items, err := h.svc.ListConversations(c.Request.Context(), userID, courseID)
+	if err != nil {
+		Error(c, err)
+		return
+	}
+	OK(c, items)
+}
+
+// ListConversation 拉取一处会话的问答历史（结构化消息，前端按末态规则重放动作）。
+// 查询参数 conversation_id 指定会话；未传时返回最近活跃会话的消息。
 func (h *DiscussionHandler) ListConversation(c *gin.Context) {
 	userID, ok := currentUser(c)
 	if !ok {
@@ -84,7 +104,16 @@ func (h *DiscussionHandler) ListConversation(c *gin.Context) {
 		Error(c, err)
 		return
 	}
-	msgs, err := h.svc.ListConversation(c.Request.Context(), userID, courseID)
+	var convID types.ID
+	if raw := c.Query("conversation_id"); raw != "" {
+		id, parseErr := types.ParseID(raw)
+		if parseErr != nil {
+			Error(c, types.ErrInvalidRequest)
+			return
+		}
+		convID = id
+	}
+	msgs, err := h.svc.ListConversation(c.Request.Context(), userID, courseID, convID)
 	if err != nil {
 		Error(c, err)
 		return

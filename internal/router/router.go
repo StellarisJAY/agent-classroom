@@ -69,8 +69,9 @@ func registerAPI(api *gin.RouterGroup, cfg *config.Config, auth *handler.AuthHan
 		courseGroup.GET("/:id/sections", section.List)
 		courseGroup.POST("/:id/generate/resume", section.Generate)
 		courseGroup.GET("/:id/learn", section.Learn)
-		// 讨论模式：提问（SSE 单流 agent loop）与课程级问答历史。
+		// 讨论模式：提问（SSE 单流 agent loop）、会话列表与问答历史。
 		courseGroup.POST("/:id/questions", discussion.AskQuestion)
+		courseGroup.GET("/:id/conversations", discussion.ListConversations)
 		courseGroup.GET("/:id/conversation", discussion.ListConversation)
 	}
 }
