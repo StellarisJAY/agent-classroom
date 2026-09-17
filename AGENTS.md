@@ -117,12 +117,14 @@ web/
     │   ├── generate/               # OutlineList 大纲列表、SectionProgressList 环节生成进度
     │   └── learn/                  # 学习页：StageSlide/StageQuiz/StageDemo 三类环节、
     │                               # ChatPanel（问答壳，拆出 ChatMessages/ChatComposer 复用）、
+    │                               # demo3d/（demo_3d 渲染器：types 契约 + schema 修剪 +
+    │                               # Demo3DScene three 构建器 + Demo3DRenderer 右侧悬浮滑块壳）、
     │                               # DiscussionPanel（讨论侧板）、WhiteboardLayer（含讨论叠加层）、
     │                               # TeacherBar（讨论中切换终止按钮）、StageToolbar（环节工具栏，含
     │                               # 讨论模式切换）、LeaveButton（退出课程按钮）、SectionDrawer 等
     ├── theme/                      # index.ts（Naive UI themeOverrides 浅/深色）+ tokens.ts（设计 token）
     └── __tests__/                  # vitest 单元测试：discussion（含 discussion-protocol 协议解析）、
-                                    # learnStrokes、learn-whiteboard、model-config、sse、token
+                                    # learnStrokes、learn-whiteboard、demo3d-schema、model-config、sse、token
 ```
 
 ### docs 文档说明

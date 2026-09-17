@@ -34,13 +34,24 @@
 
 ## 几何体字段
 
-- `id`：字符串，场景内唯一（后续被 materialId、控制器 targetId 引用）。
+- `id`：字符串，场景内唯一（后续被 materialId、parentId、控制器 targetId 引用）。
 - `type`：上表枚举之一；**未知类型元素会被直接丢弃**，不要发明新类型。
 - `args`：按上表的参数顺序与个数给出的数字数组。
-- `position`：`[x,y,z]` 世界坐标（默认 `[0,0,0]`）。
+- `position`：`[x,y,z]` 坐标（默认 `[0,0,0]`）；有 `parentId` 时为**相对父节点的局部坐标**，无则为世界坐标。
 - `rotation`：`[x,y,z]` **弧度** 欧拉角（默认 `[0,0,0]`）；例：-90° = -1.57。
 - `scale`：倍率，数字（整体）或 `[x,y,z]`（各轴），**必须 > 0**（默认 1）。
 - `materialId`：引用材质集合的 id；悬空引用将由系统用默认材质渲染，故尽量正确引用。
+- `parentId`：可选，父几何体 id（场景树父子关系，缺省挂场景根）。**多几何体组合的模型必须用 parentId 组树**（见下「父子关系」）。
+
+## 父子关系（组合模型的关键）
+
+一个组合模型（如水分子、桌子）由多个几何体构成，**控制器操控的是单个几何体**；
+要让整体变换带动全部部件，必须建立父子关系：
+
+1. 选定一个**主体几何体**（体积最大/位于形体中心的部件）作为树根部件，其余部件的 `parentId` 均指向它或指向其子部件（允许多层，禁止成环）。
+2. 挂了 `parentId` 的部件，其 `position` 是**相对父节点的局部坐标**（父节点在原点、未旋转时的坐标），计算时以父节点位置为原点偏移。
+3. **尽量让父节点位于子树几何中心**，这样绕父节点的整体旋转不会甩出偏心轨迹。
+4. 控制器 `targetId` 指向主体几何体即可：rotation/scale/translation 作用于父节点，变换会**级联带动整棵子树**（如「氧原子自转」会让整颗水分子一起转）。
 
 ## 材质字段（type 仅限枚举）
 
@@ -119,27 +130,28 @@ orbit 另有可选 `autoRotate: true`（声明相机自动环绕的意向，当�
 ```json
 {
   "scene": { "background": "#0f172a", "axesHelper": true },
-  "geometries": [ { "id": "atom-o", "type": "Sphere", "args": [1, 32, 16], "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": 1, "materialId": "mat-o" } ],
-  "materials": [ { "id": "mat-o", "type": "MeshStandardMaterial", "color": "#f43f5e", "roughness": 0.4, "metalness": 0.1, "opacity": 1 } ],
+  "geometries": [ { "id": "atom-o", "type": "Sphere", "args": [1, 32, 16], "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": 1, "materialId": "mat-o" }, { "id": "atom-h", "type": "Sphere", "args": [0.5, 32, 16], "position": [1.4, 0.8, 0], "rotation": [0, 0, 0], "scale": 1, "materialId": "mat-h", "parentId": "atom-o" } ],
+  "materials": [ { "id": "mat-o", "type": "MeshStandardMaterial", "color": "#f43f5e", "roughness": 0.4, "metalness": 0.1, "opacity": 1 }, { "id": "mat-h", "type": "MeshStandardMaterial", "color": "#38bdf8", "roughness": 0.4, "metalness": 0.1, "opacity": 1 } ],
   "lights": [ { "type": "AmbientLight", "color": "#ffffff", "intensity": 0.5 }, { "type": "DirectionalLight", "color": "#ffffff", "intensity": 1.5, "position": [5, 8, 5], "target": [0, 0, 0] } ],
   "cameras": [ { "type": "PerspectiveCamera", "position": [4, 3, 6], "fov": 50, "lookAt": [0, 0, 0] } ],
-  "controls": [ { "type": "orbit", "title": "环绕视角" }, { "type": "rotation", "title": "小球自转", "targetId": "atom-h", "axis": "y" } ]
+  "controls": [ { "type": "orbit", "title": "环绕视角" }, { "type": "rotation", "title": "分子整体自转", "targetId": "atom-o", "axis": "y" } ]
 }
 ```
 
 ### few-shot 完整示例
 
-下面是一个正确的完整输出示例（水分子 V 形示意，含轨道相机与氧原子自转滑块）：
+下面是一个正确的完整输出示例（水分子 V 形示意：氢原子与化学键以 `parentId` 挂到
+氧原子上组成场景树，绕氧原子的自转会带动整个分子；子部件 position 为相对氧原子的局部坐标；含轨道相机与自转滑块）：
 
 ```json
 {
   "scene": { "background": "#0f172a", "axesHelper": false },
   "geometries": [
     { "id": "atom-o", "type": "Sphere", "args": [1.2, 32, 16], "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": 1, "materialId": "mat-o" },
-    { "id": "atom-h1", "type": "Sphere", "args": [0.6, 32, 16], "position": [1.7, -0.9, 0], "rotation": [0, 0, 0], "scale": 1, "materialId": "mat-h" },
-    { "id": "atom-h2", "type": "Sphere", "args": [0.6, 32, 16], "position": [-1.7, -0.9, 0], "rotation": [0, 0, 0], "scale": 1, "materialId": "mat-h" },
-    { "id": "bond-1", "type": "Cylinder", "args": [0.15, 0.15, 1.8, 16], "position": [0.85, -0.45, 0], "rotation": [0, 0, 1.1], "scale": 1, "materialId": "mat-bond" },
-    { "id": "bond-2", "type": "Cylinder", "args": [0.15, 0.15, 1.8, 16], "position": [-0.85, -0.45, 0], "rotation": [0, 0, -1.1], "scale": 1, "materialId": "mat-bond" }
+    { "id": "atom-h1", "type": "Sphere", "args": [0.6, 32, 16], "position": [1.7, -0.9, 0], "rotation": [0, 0, 0], "scale": 1, "materialId": "mat-h", "parentId": "atom-o" },
+    { "id": "atom-h2", "type": "Sphere", "args": [0.6, 32, 16], "position": [-1.7, -0.9, 0], "rotation": [0, 0, 0], "scale": 1, "materialId": "mat-h", "parentId": "atom-o" },
+    { "id": "bond-1", "type": "Cylinder", "args": [0.15, 0.15, 1.8, 16], "position": [0.85, -0.45, 0], "rotation": [0, 0, 1.1], "scale": 1, "materialId": "mat-bond", "parentId": "atom-o" },
+    { "id": "bond-2", "type": "Cylinder", "args": [0.15, 0.15, 1.8, 16], "position": [-0.85, -0.45, 0], "rotation": [0, 0, -1.1], "scale": 1, "materialId": "mat-bond", "parentId": "atom-o" }
   ],
   "materials": [
     { "id": "mat-o", "type": "MeshStandardMaterial", "color": "#f43f5e", "roughness": 0.35, "metalness": 0.1 },

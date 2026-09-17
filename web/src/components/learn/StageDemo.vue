@@ -6,14 +6,17 @@ import { CodeSlashOutline, PlayOutline, PencilOutline } from '@vicons/ionicons5'
 import { SectionType, type SectionTypeValue } from '@/api/learn'
 import { useLearnStore } from '@/stores/learn'
 
+import Demo3DRenderer from '@/components/learn/demo3d/Demo3DRenderer.vue'
+
 const store = useLearnStore()
 
 const demo = computed(() => store.demoSectionContent)
 const demoType = computed<SectionTypeValue | null>(() => store.demoType)
 const isBasic = computed(() => demoType.value === SectionType.DemoBasic)
+const is3D = computed(() => demoType.value === SectionType.Demo3D)
 const runCode = computed(() => (store.demoEditing ? store.demoDraft : (demo.value?.code ?? '')))
 
-/** 三种 demo 类型的展示信息（demo_3d/demo_function 需预注入库，本期未实现在线运行/编辑）。 */
+/** 三种 demo 类型的展示信息（demo_function 需预注入库，本期未实现在线运行/编辑）。 */
 const demoTypeLabel: Record<string, string> = {
   [SectionType.Demo3D]: '3D 演示',
   [SectionType.DemoFunction]: '函数演示',
@@ -36,7 +39,9 @@ const typeName = computed(() =>
           {{
             isBasic
               ? '可交互演示：改动代码后运行预览'
-              : typeName + ' 需在沙箱内预注入运行库，本期暂不支持在线编辑'
+              : is3D
+                ? '可交互三维演示：拖拽旋转视角，滑块调节'
+                : typeName + ' 需在沙箱内预注入运行库，本期暂不支持在线编辑'
           }}
         </span>
         <div v-if="store.demoEditing" class="stage-demo__actions">
@@ -54,15 +59,16 @@ const typeName = computed(() =>
       </div>
 
       <n-alert
-        v-if="!isBasic"
+        v-if="!isBasic && !is3D"
         type="warning"
         :bordered="false"
         class="stage-demo__alert"
         title="演示类型暂未支持"
       >
-        {{ typeName }} 需要在沙箱内预注入运行库
-        {{ demoType === SectionType.Demo3D ? 'Three.js' : '绘图' }} 本期尚未实现。
+        {{ typeName }} 需要在沙箱内预注入运行库绘图 本期尚未实现。
       </n-alert>
+
+      <Demo3DRenderer v-if="is3D" class="stage-demo__scene" :content="store.demo3DSectionContent" />
 
       <div v-if="isBasic && demo" class="stage-demo__split" :class="{ 'is-editing': store.demoEditing }">
         <div class="stage-demo__preview">
@@ -137,6 +143,10 @@ const typeName = computed(() =>
 
 .stage-demo__alert {
   max-width: 640px;
+}
+
+.stage-demo__scene {
+  width: 100%;
 }
 
 .stage-demo__split {

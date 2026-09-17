@@ -123,6 +123,12 @@ export const useLearnStore = defineStore('learn', () => {
   const demoSectionContent = computed(() =>
     isDemo.value ? (currentSection.value!.content as learnApi.DemoContent) : null,
   )
+  /** demo_3d 的 content 为场景描述 JSON（区别于 basic 的 {code}），透传给渲染器修剪解析。 */
+  const demo3DSectionContent = computed(() =>
+    isDemo.value && currentSection.value?.type === learnApi.SectionType.Demo3D
+      ? (currentSection.value!.content as unknown as learnApi.Demo3DContent)
+      : null,
+  )
   const demoType = computed(() =>
     isDemo.value ? (currentSection.value!.type as learnApi.SectionTypeValue) : null,
   )
@@ -512,6 +518,7 @@ export const useLearnStore = defineStore('learn', () => {
     whiteboardStrokes,
     questionCount,
     demoSectionContent,
+    demo3DSectionContent,
     demoType,
     demoEditing,
     demoDraft,

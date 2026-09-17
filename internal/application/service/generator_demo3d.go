@@ -31,6 +31,7 @@ type demo3DScene struct {
 
 // demo3DGeometry 几何体：内置 primitive 的实例化与初值变换。
 // Scale 允许数字（整体倍率）或三轴数组，前端按两者兼容解析。
+// ParentID 为场景树父子关系（缺省挂场景根）：不做后端校验，悬空/成环由前端剥环兜底。
 type demo3DGeometry struct {
 	ID         string          `json:"id"`
 	Type       string          `json:"type"`
@@ -39,6 +40,7 @@ type demo3DGeometry struct {
 	Rotation   demo3DVec3      `json:"rotation,omitempty"`
 	Scale      any             `json:"scale,omitempty"`
 	MaterialID string          `json:"materialId,omitempty"`
+	ParentID   string          `json:"parentId,omitempty"`
 }
 
 // demo3DMaterial 材质。

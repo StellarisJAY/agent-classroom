@@ -1,4 +1,4 @@
-import type { DemoContent } from './learn'
+import type { DemoContent, Demo3DContent } from './learn'
 
 /**
  * learn mock：学习页的进度/演示代码的内存态 + demo 兜底数据。
@@ -13,7 +13,7 @@ const progressByCourse = new Map<string, string>()
 const demoCodeBySection = new Map<string, string>()
 
 // ---- demo 兜底数据（后端尚未生成真实内容）----
-// 仅 demo_basic 目前可运行预览；demo_3d / demo_function 需预注入库，本期未实现。
+// demo_basic / demo_3d 均可预览；demo_function 需预注入绘图库，本期未实现。
 
 export const DEMO_CONTENT: DemoContent = {
   code: `<!DOCTYPE html>
@@ -50,6 +50,32 @@ export const DEMO_CONTENT: DemoContent = {
   </script>
 </body>
 </html>`,
+}
+
+/** demo_3d 兜底：水分子 V 形示意（与后端 few-shot 示例一致，氢/键以 parentId 挂氧原子组成场景树）。 */
+export const DEMO3D_CONTENT: Demo3DContent = {
+  scene: { background: '#0f172a', axesHelper: false },
+  geometries: [
+    { id: 'atom-o', type: 'Sphere', args: [1.2, 32, 16], position: [0, 0, 0], rotation: [0, 0, 0], scale: 1, materialId: 'mat-o' },
+    { id: 'atom-h1', type: 'Sphere', args: [0.6, 32, 16], position: [1.7, -0.9, 0], rotation: [0, 0, 0], scale: 1, materialId: 'mat-h', parentId: 'atom-o' },
+    { id: 'atom-h2', type: 'Sphere', args: [0.6, 32, 16], position: [-1.7, -0.9, 0], rotation: [0, 0, 0], scale: 1, materialId: 'mat-h', parentId: 'atom-o' },
+    { id: 'bond-1', type: 'Cylinder', args: [0.15, 0.15, 1.8, 16], position: [0.85, -0.45, 0], rotation: [0, 0, 1.1], scale: 1, materialId: 'mat-bond', parentId: 'atom-o' },
+    { id: 'bond-2', type: 'Cylinder', args: [0.15, 0.15, 1.8, 16], position: [-0.85, -0.45, 0], rotation: [0, 0, -1.1], scale: 1, materialId: 'mat-bond', parentId: 'atom-o' },
+  ],
+  materials: [
+    { id: 'mat-o', type: 'MeshStandardMaterial', color: '#f43f5e', roughness: 0.35, metalness: 0.1 },
+    { id: 'mat-h', type: 'MeshStandardMaterial', color: '#38bdf8', roughness: 0.35, metalness: 0.1 },
+    { id: 'mat-bond', type: 'MeshStandardMaterial', color: '#e2e8f0', roughness: 0.6, metalness: 0 },
+  ],
+  lights: [
+    { type: 'AmbientLight', color: '#ffffff', intensity: 0.45 },
+    { type: 'DirectionalLight', color: '#ffffff', intensity: 1.6, position: [6, 8, 4], target: [0, 0, 0] },
+  ],
+  cameras: [{ type: 'PerspectiveCamera', position: [0, 2, 8], fov: 45, lookAt: [0, -0.3, 0] }],
+  controls: [
+    { type: 'orbit', title: '环绕视角', autoRotate: false },
+    { type: 'rotation', title: '氧原子自转', targetId: 'atom-o', axis: 'y' },
+  ],
 }
 
 // ---- 变更 ----

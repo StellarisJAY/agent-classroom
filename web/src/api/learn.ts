@@ -235,6 +235,76 @@ export interface DemoContent {
   code: string
 }
 
+export interface Demo3DVec3 {
+  0: number
+  1: number
+  2: number
+}
+
+// ---- Demo 3D ----
+// demo_3d 的 content 为纯数据场景描述 JSON（契约见 docs/3D演示数据结构.md），
+// 前端解析后用 three.js 渲染；字段均可选/宽松，渲染期由 demo3d/schema.ts 兜底修剪。
+
+export interface Demo3DSceneConfig {
+  background?: string
+  axesHelper?: boolean
+}
+
+export interface Demo3DGeometry {
+  id?: string
+  type?: string
+  args?: number[]
+  position?: Demo3DVec3
+  rotation?: Demo3DVec3
+  scale?: number | Demo3DVec3
+  materialId?: string
+  /** 父几何体 id（场景树父子关系）；缺省挂场景根 */
+  parentId?: string
+}
+
+export interface Demo3DMaterial {
+  id?: string
+  type?: string
+  color?: string
+  roughness?: number
+  metalness?: number
+  opacity?: number
+  emissive?: string
+}
+
+export interface Demo3DLight {
+  type?: string
+  color?: string
+  intensity?: number
+  position?: Demo3DVec3
+  target?: Demo3DVec3
+  castShadow?: boolean
+}
+
+export interface Demo3DCamera {
+  type?: string
+  position?: Demo3DVec3
+  fov?: number
+  lookAt?: Demo3DVec3
+}
+
+export interface Demo3DControl {
+  type?: string
+  title?: string
+  targetId?: string
+  axis?: 'x' | 'y' | 'z'
+  autoRotate?: boolean
+}
+
+export interface Demo3DContent {
+  scene?: Demo3DSceneConfig
+  geometries?: Demo3DGeometry[]
+  materials?: Demo3DMaterial[]
+  lights?: Demo3DLight[]
+  cameras?: Demo3DCamera[]
+  controls?: Demo3DControl[]
+}
+
 // ---- Quiz ----
 
 export const QuestionType = {
