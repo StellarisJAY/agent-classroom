@@ -31,21 +31,19 @@ type ExtractorConfig struct {
 	MaxDocTokens int `mapstructure:"max_doc_tokens"`
 	// CharsPerToken token→字符换算系数（中文约 1.5，纯英文可设 2~4）
 	CharsPerToken float64 `mapstructure:"chars_per_token"`
-	// ExtractTimeout 单文档同步提取超时（StartOutline 前置等待用）
+	// ExtractTimeout 单文档同步提取超时（大纲生成后台任务首步 EnsureDocsReady 用）
 	ExtractTimeout time.Duration `mapstructure:"extract_timeout"`
 	// Mineru minerU 外部提取服务配置
 	Mineru MineruConfig `mapstructure:"mineru"`
 }
 
-// MineruConfig minerU 文档提取服务接入配置。
+// MineruConfig minerU 文档提取服务接入配置（官方 API 由官方 Go SDK 实现）。
 type MineruConfig struct {
-	// Mode 部署形态：official 官方 API | selfhosted 自托管端点
-	Mode string `mapstructure:"mode"`
-	// BaseURL 官方 API 或自托管服务地址
+	// BaseURL 官方 API 或自托管服务的 v4 兼容端点（空 → SDK 默认 https://mineru.net/api/v4）
 	BaseURL string `mapstructure:"base_url"`
-	// AdminToken 官方 API 的管理令牌（selfhosted 可复用为鉴权 token）
+	// AdminToken 官方 API 的管理令牌；为空或无效时回退免登录 Flash 提取（10MB/20 页限制）
 	AdminToken string `mapstructure:"admin_token"`
-	// Timeout 单篇文档提取（含上传与轮询）超时
+	// Timeout 单篇文档提取（上传+轮询，SDK 内部托管）总超时
 	Timeout time.Duration `mapstructure:"timeout"`
 }
 
@@ -217,7 +215,6 @@ func Load() (*Config, error) {
 	v.SetDefault("extractor.max_doc_tokens", 20000)
 	v.SetDefault("extractor.chars_per_token", 1.5)
 	v.SetDefault("extractor.extract_timeout", 5*time.Minute)
-	v.SetDefault("extractor.mineru.mode", "official")
 	v.SetDefault("extractor.mineru.base_url", "")
 	v.SetDefault("extractor.mineru.admin_token", "")
 	v.SetDefault("extractor.mineru.timeout", 300*time.Second)

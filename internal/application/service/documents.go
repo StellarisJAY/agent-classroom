@@ -33,7 +33,7 @@ func (b DocBudget) budgetChars() int {
 }
 
 // docLoader 参考文档提取与文本加载的唯一入口：
-// - EnsureExtracted：幂等补跑提取并落库缓存（建课异步与生成前置共用）；
+// - EnsureDocsReady：大纲生成的首步环节，幂等收敛全部文档的提取状态并落库缓存；
 // - LoadDocsText：按 token 预算把已提取文本裁剪为单段注入提示词的引用块。
 // 提取状态以 document.extracted_status 为唯一事实源，进程内存只做并发去重。
 type docLoader struct {
@@ -41,9 +41,9 @@ type docLoader struct {
 	storage   types.Storage
 	extractor extractor.Extractor
 	budget    DocBudget
-	// extractTimeout 生成前置同步等待提取的超时（EnsureExtractedWithTimeout）
+	// extractTimeout 提取收敛等待的单次超时（EnsureDocsReady 内部使用）
 	extractTimeout time.Duration
-	// per-course singleflight：避免异步提取与用户快速触发生成导致重复提取
+	// per-course singleflight：避免大纲生成重试导致重复提取
 	mus sync.Map // courseID -> *sync.Mutex
 }
 
@@ -105,9 +105,10 @@ func (l *docLoader) EnsureExtracted(ctx context.Context, courseID types.ID, retr
 	return ok, failedSoFar, nil
 }
 
-// EnsureExtractedWithTimeout 生成前置等待：在超时内幂等等待提取收敛。
+// EnsureDocsReady 大纲生成首步：确保课程全部文档的提取状态收敛（success/failed）。
+// 幂等：success 文档始终跳过（重新生成不会重复提取）；failed 文档按 retryFailed 决定是否重试。
 // 超时返回 ErrDocExtracting；课程有文档但全部提取失败返回 ErrDocExtractFailed；无文档成功返回 0,0。
-func (l *docLoader) EnsureExtractedWithTimeout(ctx context.Context, courseID types.ID) (okCnt, failedCnt int, err error) {
+func (l *docLoader) EnsureDocsReady(ctx context.Context, courseID types.ID, retryFailed bool) (okCnt, failedCnt int, err error) {
 	timeout := l.extractTimeout
 	if timeout <= 0 {
 		timeout = 5 * time.Minute
@@ -116,19 +117,21 @@ func (l *docLoader) EnsureExtractedWithTimeout(ctx context.Context, courseID typ
 	defer cancel()
 
 	hasDoc := false
-	docs, derr := l.docRepo.ListByCourse(ctx, courseID)
-	if derr == nil {
-		for i := range docs {
-			if docs[i].ExtractedStatus != types.ExtractStatusSuccess || docs[i].ExtractedText == nil {
-				hasDoc = true
-			}
+	docs, derr := l.docRepo.ListByCourse(wctx, courseID)
+	if derr != nil {
+		return 0, 0, derr
+	}
+	for i := range docs {
+		// 全部成功即视为已收敛，无需进入提取环节（重新生成的常态）
+		if docs[i].ExtractedStatus != types.ExtractStatusSuccess || docs[i].ExtractedText == nil {
+			hasDoc = true
 		}
 	}
 	if !hasDoc {
 		return 0, 0, nil
 	}
 
-	okCnt, failedCnt, err = l.EnsureExtracted(wctx, courseID, false)
+	okCnt, failedCnt, err = l.EnsureExtracted(wctx, courseID, retryFailed)
 	if err != nil && wctx.Err() != nil {
 		return okCnt, failedCnt, types.ErrDocExtracting
 	}

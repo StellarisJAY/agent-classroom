@@ -40,8 +40,8 @@ agent-classroom/
 │   │   └── agent_test.go           # agent loop 单元测试
 │   ├── application/
 │   │   ├── service/                # 业务逻辑实现（依赖 repo 接口 + model 适配器）
-│   │   │   ├── course.go           # 课程 CRUD（列表/创建/文档状态）+ CourseService 结构体装配
-│   │   │   ├── generate_outline.go # 大纲生成域：任务状态机 + LLM 生成核心 + 大纲查询/版本管理
+│   │   │   ├── course.go           # 课程 CRUD（列表/创建/文档状态）+ CourseService 结构体装配；建课不触发提取，文档由大纲生成任务收敛
+│   │   │   ├── generate_outline.go # 大纲生成域：任务状态机 + 生成首步文档提取幂等收敛 + LLM 生成核心 + 大纲查询/版本管理
 │   │   │   ├── generator_slide.go  # Slide 环节生成
 │   │   │   ├── generator_quiz.go   # 测试题生成
 │   │   │   ├── generator_demo.go   # 互动演示生成（HTML 模板拼接 + CSP 禁网络）
@@ -59,7 +59,7 @@ agent-classroom/
 │   │   ├── model.go                # 通用类型（ChatMessage、ProviderConfig）+ Registry
 │   │   ├── llm/                    # LLM 适配器（OpenAI 兼容实现）
 │   │   ├── image/                  # 图像生成适配器（openai 兼容 / bailian 专属协议）
-│   │   ├── extractor/              # 参考文档提取器（local / mineru / chain 兜底链）
+│   │   ├── extractor/              # 参考文档提取器（local / mineru（官方 Go SDK，无 token 回退 Flash）/ chain 兜底链）
 │   │   └── tts/                    # 预留：TTS 适配器（暂无实现）
 │   ├── storage/                    # 对象存储实现（local / minio），实现 types.Storage
 │   ├── handler/                    # HTTP 层：解析请求 → 调 service → 统一响应
@@ -190,7 +190,7 @@ web/
 
 - LLM 提示词一律放 `prompts/` 子目录（现存 `internal/application/service/prompts/`、`internal/agent/prompts/`），经 `go:embed` 引入（各自包内 `prompt.go`），不硬编码在 Go 代码里。
 - 互动演示环节以 `templates/*.html` 骨架拼接生成，产出页面启用 CSP 禁止网络访问，写入 `section.content`。
-- 参考文档提取走 `model/extractor` 链：按配置选 local / mineru / chain（外部优先、本地兜底）。
+- 参考文档提取走 `model/extractor` 链：按配置选 local / mineru / chain（外部优先、本地兜底）；minerU 官方 API 用官方 Go SDK（sdk/go），无 token 自动回退免登录 Flash 提取。
 
 ## 测试约定
 

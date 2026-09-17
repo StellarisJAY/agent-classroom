@@ -36,7 +36,8 @@ type DiscussionService struct {
 
 	// running 进行中会话（per-conversation 串行）：同会话进行中提问直接拒绝。
 	mu      sync.Mutex
-	running map[types.ID]struct{}}
+	running map[types.ID]struct{}
+}
 
 var _ types.DiscussionService = (*DiscussionService)(nil)
 

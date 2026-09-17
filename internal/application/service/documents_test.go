@@ -39,7 +39,10 @@ func (f *fakeDocRepo) UpdateExtracted(_ context.Context, id types.ID, status, te
 	return types.ErrNotFound
 }
 
-type roStorage struct{ url string; data []byte }
+type roStorage struct {
+	url  string
+	data []byte
+}
 
 func (s roStorage) Put(_ context.Context, key string, _ io.Reader) (string, error) { return s.url, nil }
 func (s roStorage) Get(_ context.Context, _ string) (io.ReadCloser, error) {
@@ -118,6 +121,76 @@ func TestDocLoaderNoBudgetNoTruncate(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, strings.Repeat("L", 100))
 	require.NotContains(t, out, "已截断")
+}
+
+// countingExtractor 统计调用次数的假提取器，用于验证幂等不重复提取。
+type countingExtractor struct {
+	calls int
+	err   error
+	text  string
+}
+
+func (e *countingExtractor) Extract(_ context.Context, _ string, _ []byte) (extractor.Result, error) {
+	e.calls++
+	if e.err != nil {
+		return extractor.Result{}, e.err
+	}
+	return extractor.Result{Text: e.text, Source: "fake"}, nil
+}
+
+func TestEnsureDocsReadySkipsConvergedDocs(t *testing.T) {
+	// 全部 success → 快路径直接返回，不触发任何提取（重新生成不重复提取）
+	text := "已提取正文"
+	cid := types.NewID()
+	repo := &fakeDocRepo{docs: []types.Document{
+		{ID: types.NewID(), Filename: "a.md", ExtractedStatus: types.ExtractStatusSuccess, ExtractedText: &text},
+	}}
+	ext := &countingExtractor{}
+	l := newDocLoader(repo, roStorage{data: []byte("x")}, ext, DocBudget{MaxTokens: 100}, 0)
+
+	ok, failed, err := l.EnsureDocsReady(context.Background(), cid, true)
+	require.NoError(t, err)
+	require.Equal(t, 0, ok)
+	require.Equal(t, 0, failed)
+	require.Equal(t, 0, ext.calls)
+}
+
+func TestEnsureDocsReadyRetriesAndConverges(t *testing.T) {
+	// pending → 首次提取成功；再次调用（重新生成场景）幂等跳过
+	cid := types.NewID()
+	repo := &fakeDocRepo{docs: []types.Document{
+		{ID: types.NewID(), Filename: "a.md", URL: "u", ExtractedStatus: types.ExtractStatusPending},
+	}}
+	ext := &countingExtractor{text: "正文"}
+	l := newDocLoader(repo, roStorage{url: "u", data: []byte("文档内容")}, ext, DocBudget{MaxTokens: 100}, 0)
+
+	ok, failed, err := l.EnsureDocsReady(context.Background(), cid, true)
+	require.NoError(t, err)
+	require.Equal(t, 1, ok)
+	require.Equal(t, 0, failed)
+	require.Equal(t, 1, ext.calls)
+
+	ok, failed, err = l.EnsureDocsReady(context.Background(), cid, true)
+	require.NoError(t, err)
+	require.Equal(t, 0, ok)
+	require.Equal(t, 0, failed)
+	require.Equal(t, 1, ext.calls)
+}
+
+func TestEnsureDocsReadyAllFailed(t *testing.T) {
+	// failed + retryFailed=true → 重试后仍全部失败 → ErrDocExtractFailed
+	cid := types.NewID()
+	repo := &fakeDocRepo{docs: []types.Document{
+		{ID: types.NewID(), Filename: "a.pdf", URL: "u", ExtractedStatus: types.ExtractStatusFailed},
+	}}
+	ext := &countingExtractor{err: context.DeadlineExceeded}
+	l := newDocLoader(repo, roStorage{url: "u", data: []byte("pdf 数据")}, ext, DocBudget{MaxTokens: 100}, 0)
+
+	ok, failed, err := l.EnsureDocsReady(context.Background(), cid, true)
+	require.ErrorIs(t, err, types.ErrDocExtractFailed)
+	require.Equal(t, 0, ok)
+	require.Equal(t, 1, failed)
+	require.Equal(t, 1, ext.calls)
 }
 
 func TestExtractLocalDocx(t *testing.T) {

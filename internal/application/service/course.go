@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -151,8 +150,8 @@ func (s *CourseService) List(ctx context.Context, userID types.ID, req types.Cou
 
 // ---- 创建 ----
 
-// Create 创建草稿课程并保存参考文档。文档先落库为 pending，由后台任务提取；
-// 提取结果（extracted_text/status）落库缓存，生成前置等待收敛。
+// Create 创建草稿课程并保存参考文档。文档先落库为 pending，
+// 提取由大纲生成后台任务首步执行（见 generate_outline.go），提取结果落库缓存。
 func (s *CourseService) Create(ctx context.Context, userID types.ID, req types.CreateCourseReq) (*types.CourseCreateResp, error) {
 	prompt := strings.TrimSpace(req.Prompt)
 	if prompt == "" {
@@ -206,16 +205,6 @@ func (s *CourseService) Create(ctx context.Context, userID types.ID, req types.C
 	})
 	if err != nil {
 		return nil, err
-	}
-
-	// 提取不阻塞建课：后台幂等补跑；用户快速点击生成时由 StartOutline 前置等待收敛
-	if len(req.Files) > 0 {
-		go func() {
-			bg := context.Background()
-			if _, _, err := s.docs.EnsureExtracted(bg, course.ID, false); err != nil {
-				slog.Warn("document extraction failed", "course_id", course.ID.String(), "error", err)
-			}
-		}()
 	}
 
 	return &types.CourseCreateResp{

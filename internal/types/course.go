@@ -189,9 +189,9 @@ var (
 	ErrFileTooLarge = NewError(CodeBadRequest, "单个参考文档不能超过 10MB")
 	// ErrOutlineFailed 大纲生成失败（上游/解析错误）
 	ErrOutlineFailed = NewError(CodeInternalError, "大纲生成失败，请重试")
-	// ErrDocExtracting 有参考文档仍在提取中（超时未完成）
+	// ErrDocExtracting 有参考文档仍在提取中（超时未完成，大纲生成任务内使用）
 	ErrDocExtracting = NewError(CodeConflict, "参考文档解析尚未完成，请稍后重试")
-	// ErrDocExtractFailed 参考文档全部提取失败（无法得到任何文本）
+	// ErrDocExtractFailed 参考文档全部提取失败（无法得到任何文本，大纲生成任务内使用）
 	ErrDocExtractFailed = NewError(CodeInternalError, "参考文档内容提取失败，请更换文件或重试")
 )
 
@@ -225,10 +225,10 @@ type CourseService interface {
 	List(ctx context.Context, userID ID, req CourseListReq) (*CourseListResp, error)
 	// ListDocuments 返回课程全部参考文档的提取状态。
 	ListDocuments(ctx context.Context, userID, courseID ID) ([]DocumentStatusView, error)
-	// Create 创建草稿课程并保存参考文档元数据（提取结果异步落库缓存）。
+	// Create 创建草稿课程并保存参考文档元数据；文档提取由大纲生成任务执行。
 	Create(ctx context.Context, userID ID, req CreateCourseReq) (*CourseCreateResp, error)
 	// StartOutline 启动大纲生成任务（后台异步执行）：校验归属与 draft 状态后触发，
-	// 立即返回；进行中重复触发返回 ErrOutlineGenerating。
+	// 立即返回；文档提取作为后台任务首步幂等收敛；进行中重复触发返回 ErrOutlineGenerating。
 	StartOutline(ctx context.Context, userID, courseID ID, feedback string) error
 	// GetOutlineTask 返回大纲生成任务状态（供前端轮询）：
 	// done（附大纲视图）/ generating / error / idle。

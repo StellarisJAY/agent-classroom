@@ -37,27 +37,23 @@ type App struct {
 }
 
 // newDocExtractor 按配置创建文档提取器：mineru 仅外部；chain 外部优先本地兜底；local 仅本地。
+// chain 下未配置 minerU 端点/token 时链路退化为仅本地。
 func newDocExtractor(cfg *config.Config) extractor.Extractor {
 	local := extractor.NewLocal()
+	mineruCfg := extractor.MineruConfig{
+		BaseURL:    cfg.Extractor.Mineru.BaseURL,
+		AdminToken: cfg.Extractor.Mineru.AdminToken,
+		Timeout:    cfg.Extractor.Mineru.Timeout,
+	}
 	switch cfg.Extractor.Provider {
 	case "local":
 		return local
 	case "mineru":
-		return extractor.NewMineru(extractor.MineruConfig{
-			Mode:       cfg.Extractor.Mineru.Mode,
-			BaseURL:    cfg.Extractor.Mineru.BaseURL,
-			AdminToken: cfg.Extractor.Mineru.AdminToken,
-			Timeout:    cfg.Extractor.Mineru.Timeout,
-		})
+		return extractor.NewMineru(mineruCfg)
 	default:
 		var mineruClient *extractor.Mineru
-		if cfg.Extractor.Mineru.BaseURL != "" {
-			mineruClient = extractor.NewMineru(extractor.MineruConfig{
-				Mode:       cfg.Extractor.Mineru.Mode,
-				BaseURL:    cfg.Extractor.Mineru.BaseURL,
-				AdminToken: cfg.Extractor.Mineru.AdminToken,
-				Timeout:    cfg.Extractor.Mineru.Timeout,
-			})
+		if mineruCfg.BaseURL != "" || mineruCfg.AdminToken != "" {
+			mineruClient = extractor.NewMineru(mineruCfg)
 		}
 		return extractor.NewChain(local, mineruClient)
 	}

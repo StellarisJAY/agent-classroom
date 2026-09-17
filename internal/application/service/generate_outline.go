@@ -17,8 +17,9 @@ import (
 )
 
 // generate_outline.go 大纲生成域逻辑：
-// 任务状态机（StartOutline/GetOutlineTask 内存任务表）+ LLM 生成核心（generateOutline，
-// 提示词组装与解析）+ 大纲查询/历史版本管理（GetOutline/ListOutlineVersions/RevertOutline）。
+// 任务状态机（StartOutline/GetOutlineTask 内存任务表）+ 生成首步文档提取收敛 +
+// LLM 生成核心（generateOutline，提示词组装与解析）+ 大纲查询/历史版本管理
+// （GetOutline/ListOutlineVersions/RevertOutline）。
 // 课程 CRUD 见 course.go，CourseService 结构体与构造函数同在 course.go。
 
 // 大纲生成参数
@@ -51,6 +52,7 @@ type outlineTask struct {
 
 // StartOutline 启动大纲生成任务（后台异步执行）。feedback 可为空（等价重新生成）。
 // 已在进行中重复触发返回 ErrOutlineGenerating；校验失败同步返回错误。
+// 文档提取不在此等待，由后台任务首步幂等收敛。
 func (s *CourseService) StartOutline(ctx context.Context, userID, courseID types.ID, feedback string) error {
 	course, err := s.courseRepo.GetByID(ctx, userID, courseID)
 	if err != nil {
@@ -64,11 +66,6 @@ func (s *CourseService) StartOutline(ctx context.Context, userID, courseID types
 	}
 	if course.Status != types.CourseStatusDraft {
 		return types.ErrOutlineAlreadyConfirmed
-	}
-
-	// 提取前置：在超时内幂等等待文档提取收敛（建课异步任务可能仍在进行）
-	if _, _, err := s.docs.EnsureExtractedWithTimeout(ctx, courseID); err != nil {
-		return err
 	}
 
 	s.outlineMu.Lock()
@@ -85,8 +82,23 @@ func (s *CourseService) StartOutline(ctx context.Context, userID, courseID types
 }
 
 // runOutlineGeneration 后台执行大纲生成并落库；结果经 DB + 任务表可供轮询。
+// 文档提取作为生成流程首步：幂等收敛（success 跳过，failed 重试），不重复提取已成功文档。
 func (s *CourseService) runOutlineGeneration(course *types.Course, feedback string) {
 	ctx := context.Background()
+	if _, _, err := s.docs.EnsureDocsReady(ctx, course.ID, true); err != nil {
+		slog.Error("document extraction not ready", "course_id", course.ID.String(), "error", err)
+		s.outlineMu.Lock()
+		t := s.outlineTasks[course.ID]
+		if t != nil {
+			t.status = taskStatusError
+			t.message = types.ErrDocExtractFailed.Msg
+			if errors.Is(err, types.ErrDocExtracting) {
+				t.message = types.ErrDocExtracting.Msg
+			}
+		}
+		s.outlineMu.Unlock()
+		return
+	}
 	if _, err := s.generateOutline(ctx, course.OwnerID, course.ID, feedback); err != nil {
 		slog.Error("outline generation failed", "course_id", course.ID.String(), "error", err)
 		s.outlineMu.Lock()

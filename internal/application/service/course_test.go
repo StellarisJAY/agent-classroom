@@ -524,3 +524,80 @@ func newTestDocsMock() *docLoader {
 	s := defaultMockSet()
 	return newTestDocs(s.doc, s.storage)
 }
+
+func TestRunOutlineGenerationExtractFailedMarksTaskError(t *testing.T) {
+	// 文档全部提取失败 → 后台任务置 error，message 提示用户
+	uid := types.NewID()
+	course := sampleCourse(types.NewID(), uid, types.CourseStatusDraft, false)
+	registry := model.NewRegistry()
+
+	svc := NewCourseService(
+		&mockCourseRepo{},
+		&mockOutlineRepo{},
+		&mockHistoryRepo{},
+		&mockDocRepo{},
+		passTM{},
+		&mockStorage{},
+		defaultMockSet().cfgSvc,
+		registry,
+		newFailExtractDocs(),
+		&config.Config{},
+	).(*CourseService)
+	svc.outlineTasks[course.ID] = &outlineTask{status: taskStatusGenerating}
+
+	svc.runOutlineGeneration(&course, "")
+
+	tk := svc.outlineTasks[course.ID]
+	require.NotNil(t, tk)
+	require.Equal(t, taskStatusError, tk.status)
+	require.Equal(t, types.ErrDocExtractFailed.Msg, tk.message)
+}
+
+func TestRunOutlineGenerationDoesNotReextractSuccessDocs(t *testing.T) {
+	// 已有成功提取文档（重新生成场景）→ 生成流程不再触发提取
+	uid := types.NewID()
+	course := sampleCourse(types.NewID(), uid, types.CourseStatusDraft, false)
+	text := "已提取正文"
+	docRepo := &mockDocRepo{
+		listBy: func(types.ID) ([]types.Document, error) {
+			return []types.Document{{
+				ID: types.NewID(), Filename: "a.md",
+				ExtractedStatus: types.ExtractStatusSuccess, ExtractedText: &text,
+			}}, nil
+		},
+	}
+	ext := &countingExtractor{}
+	docs := newDocLoader(docRepo, &mockStorage{}, ext, DocBudget{MaxTokens: 1000}, 0)
+
+	registry := model.NewRegistry()
+	svc := NewCourseService(
+		&mockCourseRepo{},
+		&mockOutlineRepo{},
+		&mockHistoryRepo{},
+		docRepo,
+		passTM{},
+		&mockStorage{},
+		defaultMockSet().cfgSvc,
+		registry,
+		docs,
+		&config.Config{},
+	).(*CourseService)
+	svc.outlineTasks[course.ID] = &outlineTask{status: taskStatusGenerating}
+
+	svc.runOutlineGeneration(&course, "")
+
+	require.Equal(t, 0, ext.calls, "成功文档不应重复提取")
+}
+
+// newFailExtractDocs 提取必然失败的文档加载器（模拟外部/本地均失败）。
+func newFailExtractDocs() *docLoader {
+	return newDocLoader(
+		&fakeDocRepo{docs: []types.Document{{
+			ID: types.NewID(), Filename: "a.pdf", URL: "u",
+			ExtractedStatus: types.ExtractStatusFailed,
+		}}},
+		roStorage{url: "u", data: []byte("pdf 数据")},
+		&countingExtractor{err: context.DeadlineExceeded},
+		DocBudget{MaxTokens: 1000}, 0,
+	)
+}
