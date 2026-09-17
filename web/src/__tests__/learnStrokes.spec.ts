@@ -37,7 +37,7 @@ describe('learnStrokes', () => {
     expect(renormalizeDrawing(d, 1, 1)).toBe(d)
   })
 
-  it('collectReplayStrokes：跨环节累积、回退剪裁、clearBoard 清空重算', () => {
+  it('collectReplayStrokes：环节隔离、回退剪裁、clearBoard 环节内清空重算', () => {
     const sections: FakeSection[] = [
       {
         id: 's1',
@@ -72,11 +72,15 @@ describe('learnStrokes', () => {
     const at0_1 = collectReplayStrokes(asReplay, 0, 1)
     expect(at0_1).toHaveLength(1)
     expect(at0_1[0]!.drawing.points![0]).toEqual([640, 360])
-    // 第 2 环节追加一笔
+    expect(at0_1[0]!.order).toBe(strokeOrder(0, 1))
+    // 切到第 2 环节：白板按环节隔离，只剩本环节第 0 步的一笔
     const at1_0 = collectReplayStrokes(asReplay, 1, 0)
-    expect(at1_0).toHaveLength(2)
-    expect(at1_0[0]!.order).toBe(strokeOrder(0, 1))
-    expect(at1_0[1]!.order).toBe(strokeOrder(1, 0))
+    expect(at1_0).toHaveLength(1)
+    expect(at1_0[0]!.order).toBe(strokeOrder(1, 0))
+    // 回到第 1 环节：重放收缩回本环节内的笔画（不残留第 2 环节内容）
+    expect(collectReplayStrokes(asReplay, 0, 1)).toHaveLength(1)
+    // 非slide/未完成环节：不产出任何笔画
+    expect(collectReplayStrokes(asReplay, 2, 0)).toHaveLength(0)
   })
 
   it('sectionCanvasSize 缺省 1280×720', () => {

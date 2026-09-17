@@ -58,8 +58,9 @@ interface ReplaySection {
 }
 
 /**
- * 全局笔画重放：白板笔画跨环节累积，行进到 (currentIndex, stepIndex) 时
- * 取所有"位置 ≤ 当前"的 draw 按序重放，遇 clearBoard 清空重算。
+ * 笔画重放：白板笔画按环节隔离，行进到 (currentIndex, stepIndex) 时
+ * 只取当前环节内步骤 0..stepIndex 的 draw 按序重放（切环节即清空），
+ * 环节内遇 clearBoard 清空重算；步骤回退时笔画自然收缩。
  * 坐标按产出环节画布尺寸归一化（sx/sy 相对逻辑坐标系）。
  */
 export function collectReplayStrokes(
@@ -68,27 +69,23 @@ export function collectReplayStrokes(
   stepIndex: number,
 ): SlideStroke[] {
   const out: SlideStroke[] = []
-  for (let si = 0; si < sections.length; si++) {
-    const s = sections[si]
-    if (!s) continue
-    if (si > currentIndex) break
-    if (s.type !== 'slide' || s.status !== 'done') continue
-    const steps = Array.isArray(s.steps) ? s.steps : []
-    const limit = si === currentIndex ? stepIndex : steps.length - 1
-    const { w: cw, h: ch } = sectionCanvasSize(s as SectionLearn)
-    const sx = BOARD_W / cw
-    const sy = BOARD_H / ch
-    for (let j = 0; j <= limit; j++) {
-      const actions = (steps[j] as { actions?: unknown[] } | undefined)?.actions ?? []
-      for (const a of actions as { type: string; drawing?: SlideDrawing }[]) {
-        if (a.type === 'clearBoard') {
-          out.length = 0
-        } else if (a.type === 'draw' && a.drawing) {
-          out.push({
-            order: strokeOrder(si, j),
-            drawing: renormalizeDrawing(a.drawing, sx, sy),
-          })
-        }
+  const s = sections[currentIndex]
+  if (!s || s.type !== 'slide' || s.status !== 'done') return out
+  const steps = Array.isArray(s.steps) ? s.steps : []
+  const limit = stepIndex
+  const { w: cw, h: ch } = sectionCanvasSize(s as SectionLearn)
+  const sx = BOARD_W / cw
+  const sy = BOARD_H / ch
+  for (let j = 0; j <= limit; j++) {
+    const actions = (steps[j] as { actions?: unknown[] } | undefined)?.actions ?? []
+    for (const a of actions as { type: string; drawing?: SlideDrawing }[]) {
+      if (a.type === 'clearBoard') {
+        out.length = 0
+      } else if (a.type === 'draw' && a.drawing) {
+        out.push({
+          order: strokeOrder(currentIndex, j),
+          drawing: renormalizeDrawing(a.drawing, sx, sy),
+        })
       }
     }
   }

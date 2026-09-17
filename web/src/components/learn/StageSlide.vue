@@ -238,9 +238,20 @@ async function loadEcharts() {
   const core = await import('echarts/core')
   const { BarChart, LineChart, PieChart } = await import('echarts/charts')
   const { GridComponent, TitleComponent, LegendComponent } = await import('echarts/components')
+  // echarts 6 的 grid.containLabel 需注册兼容特性，否则弃用警告（渲染仍生效）
+  const { LegacyGridContainLabel } = await import('echarts/features')
   const { SVGRenderer } = await import('echarts/renderers')
-  core.use([BarChart, LineChart, PieChart, GridComponent, TitleComponent, LegendComponent, SVGRenderer])
-  return { init: core.init }
+  core.use([
+    BarChart,
+    LineChart,
+    PieChart,
+    GridComponent,
+    TitleComponent,
+    LegendComponent,
+    SVGRenderer,
+    LegacyGridContainLabel,
+  ])
+  return { init: core.init, getInstanceByDom: core.getInstanceByDom }
 }
 
 /** 元素 id → 图表实例（元素移除/数据变化时 dispose） */
@@ -248,9 +259,13 @@ const chartEntries = new Map<string, ChartEntry>()
 const chartRefs = new Map<string, HTMLElement>()
 let echartsLoader: Promise<Awaited<ReturnType<typeof loadEcharts>>> | null = null
 
+/** 动态加载失败时重置 loader，避免一次失败永久拒绝后续所有图表渲染。 */
 function loadEchartsOnce() {
   echartsLoader ??= loadEcharts()
-  return echartsLoader
+  return echartsLoader.catch((e) => {
+    echartsLoader = null
+    throw e
+  })
 }
 
 function setChartRef(id: string, node: unknown) {
@@ -261,21 +276,41 @@ function setChartRef(id: string, node: unknown) {
 async function renderChart(el: SlideChartElement, accent: string) {
   const key = `${el.id}@${JSON.stringify({ ...el, id: '', x: 0, y: 0 })}`
   const entry = chartEntries.get(el.id)
-  if (entry && entry.key === key) return
+  if (entry && entry.key === key) {
+    const inst = entry.inst
+    // 缓存命中还需实例校验：keyed patch 可能复用/重建 inner div，导致实例
+    // 绑定在已被替换的旧节点上（页面空白且无任何报错）。失配/已销毁即重渲染。
+    if (inst && !inst.isDisposed() && chartRefs.get(el.id) === inst.getDom()) return
+    console.warn('[chart] 缓存实例失效，重新渲染', el.id)
+  }
   entry?.inst?.dispose()
   chartEntries.set(el.id, { key, inst: null })
   try {
     await nextTick()
+    await loadEchartsOnce()
+    // nextTick 期间可能有新调用接管同一元素：让位给最新调用（last-call-wins）
+    if (chartEntries.get(el.id)?.key !== key) return
     const dom = chartRefs.get(el.id)
-    if (!dom) return
-    const { init } = await loadEchartsOnce()
+    if (!dom) {
+      // 容器节点缺失：直接 return 会留下 inst=null + key 匹配的"锁死"状态
+      // （后续 watch 触发直接提前 return 永不重试），置空 key 允许下次重试。
+      console.warn('[chart] 渲染容器缺失，跳过本次渲染', el.id)
+      chartEntries.set(el.id, { key: '', inst: null })
+      return
+    }
     const option = buildChartOption(el, accent)
+    // 同一 dom 已有实例（含 dispose 残留）时 init 会命中旧实例直接返回，
+    // 这里先兜底清理，保证 init 拿到的是全新实例。
+    const { init, getInstanceByDom } = await loadEchartsOnce()
+    getInstanceByDom(dom)?.dispose()
     const inst = init(dom, null, { renderer: 'svg', width: el.width, height: el.height })
     inst.setOption(option)
     chartEntries.set(el.id, { key, inst })
     await nextTick(measureOverlays)
-  } catch {
-    // 渲染失败：保持 inst 为 null，元素不显示，不影响其余内容（与 mermaid 一致）
+  } catch (e) {
+    // 渲染失败：显式报错（前序实现静默吞错导致"整块不可见"无法定位）；key 置空允许下次重试
+    console.warn('[chart] 渲染失败', e, el.id)
+    chartEntries.set(el.id, { key: '', inst: null })
   }
 }
 
@@ -781,6 +816,7 @@ watch([() => store.stepIndex, () => store.currentIndex], async () => {
           :canvas-height="content.height"
           :scale="scale"
           :overlay-strokes="discussion.overlayStrokes"
+          :section-key="store.currentSection?.id ?? ''"
         />
       </div>
     </div>

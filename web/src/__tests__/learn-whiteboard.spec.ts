@@ -50,29 +50,7 @@ beforeEach(() => {
 })
 
 describe('learn store 白板笔画回放', () => {
-  it('笔画跨环节累积：切换到下一环节不清空', () => {
-    const store = useLearnStore()
-    seedDetail(store, [
-      slideSection('s1', [
-        { text: 'a', actions: [{ type: 'draw', drawing: { kind: 'pen', points: [[1, 1]] } }] },
-        { text: 'b' },
-      ]),
-      slideSection('s2', [
-        { text: 'c', actions: [{ type: 'draw', drawing: { kind: 'pen', points: [[2, 2]] } }] },
-      ]),
-    ])
-    // 处于第一节第 0 步：只有 s1 第 0 步的笔画
-    expect(store.whiteboardStrokes).toHaveLength(1)
-    // 切到下一环节（第 2 节第 0 步）：s1 的笔画累积保留
-    store.goTo(1)
-    expect(store.currentIndex).toBe(1)
-    expect(store.whiteboardStrokes).toHaveLength(2)
-    // 回到上一环节：重放收缩到该位置之前的状态（自动回退，无重复作画）
-    store.goTo(0)
-    expect(store.whiteboardStrokes).toHaveLength(1)
-  })
-
-  it('clearBoard 清空全部已累积笔画，之后重新累积', () => {
+  it('笔画按环节隔离：切换环节白板清空，回到上一环节恢复该环节笔画', () => {
     const store = useLearnStore()
     seedDetail(store, [
       slideSection('s1', [
@@ -80,15 +58,35 @@ describe('learn store 白板笔画回放', () => {
         { text: 'b', actions: [{ type: 'draw', drawing: { kind: 'pen', points: [[1, 1]] } }] },
       ]),
       slideSection('s2', [
-        { text: 'c', actions: [{ type: 'clearBoard' }] },
-        { text: 'd', actions: [{ type: 'draw', drawing: { kind: 'pen', points: [[1, 1]] } }] },
+        { text: 'c' },
       ]),
     ])
+    // 处于第一节第 0 步：只有 s1 第 0 步的笔画
+    expect(store.whiteboardStrokes).toHaveLength(1)
+    // 切到下一环节（第 2 节第 0 步）：白板清空
+    store.goTo(1)
+    expect(store.currentIndex).toBe(1)
+    expect(store.whiteboardStrokes).toHaveLength(0)
+    // 回到上一环节：重放恢复 s1 当前步的笔画（不残留 s2 内容）
+    store.goTo(0)
+    expect(store.whiteboardStrokes).toHaveLength(1)
+  })
+
+  it('clearBoard 在环节内清空已累积笔画，之后重新累积', () => {
+    const store = useLearnStore()
+    seedDetail(store, [
+      slideSection('s1', [
+        { text: 'a', actions: [{ type: 'draw', drawing: { kind: 'pen', points: [[1, 1]] } }] },
+        { text: 'b', actions: [{ type: 'draw', drawing: { kind: 'pen', points: [[1, 1]] } }] },
+      ]),
+      slideSection('s2', [
+        { text: 'c', actions: [{ type: 'clearBoard' }, { type: 'draw', drawing: { kind: 'pen', points: [[1, 1]] } }] },
+      ]),
+    ])
+    // 上一环节笔画不跨环节带入：s1 的 2 笔在切换时即清空
     store.goTo(1)
     expect(store.stepIndex).toBe(0)
-    // 当前步骤（s2 第 0 步）的 clearBoard 已生效 → s1 的 2 笔被清空
-    expect(store.whiteboardStrokes).toHaveLength(0)
-    store.nextStep()
+    // 当前步骤（s2 第 0 步）的 clearBoard 生效且重新累积了新的一笔
     expect(store.whiteboardStrokes).toHaveLength(1)
   })
 

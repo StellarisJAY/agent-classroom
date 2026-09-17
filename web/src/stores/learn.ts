@@ -112,9 +112,9 @@ export const useLearnStore = defineStore('learn', () => {
     return null
   })
 
-  /** 全局笔画重放：白板笔画跨环节累积（order = sectionIndex*1000 + stepIndex），
-   *  行进到某位置时取所有 order ≤ 当前位置的 draw 动作按序重放，遇 clearBoard 清空重算。
-   *  坐标按产出环节的画布尺寸归一化到 1280×720，跨环节对齐（纯函数见 learnStrokes.ts）。 */
+  /** 笔画按环节隔离重放：切环节即清空白板，只回放当前环节步骤 0..当前步的 draw，
+   *  环节内遇 clearBoard 清空重算（纯函数见 learnStrokes.ts）。
+   *  坐标按产出环节的画布尺寸归一化到 1280×720。 */
   const whiteboardStrokes = computed<SlideStroke[]>(() =>
     collectReplayStrokes(sections.value as unknown as ReplaySection[], currentIndex.value, stepIndex.value),
   )

@@ -23,8 +23,13 @@ const props = withDefaults(
      * 为空/未传时不渲染叠加画布。
      */
     overlayStrokes?: SlideStroke[]
+    /**
+     * 所属环节标识（环节 id）：切换环节时白板笔画序列整体更换，
+     * 重置逐笔浮现基准，新环节步骤 0 的既有笔画整段静态呈现。
+     */
+    sectionKey?: string
   }>(),
-  { overlayStrokes: () => [] },
+  { overlayStrokes: () => [], sectionKey: '' },
 )
 
 /** 各笔画粗细的绘制线宽（逻辑坐标 px，随 scale 放大） */
@@ -222,6 +227,17 @@ function arrowHead(
 watch(
   () => props.strokes,
   () => redraw(),
+)
+// 切换环节：重置动画基准，新环节笔画整段静态呈现（如同新画布首次载入）
+watch(
+  () => props.sectionKey,
+  () => {
+    stopAnim()
+    lastBaseCount = 0
+    visibleCount.value = props.view === 'slide' ? 0 : props.strokes.length
+    paint(0, visibleCount.value)
+    paintOverlay()
+  },
 )
 // 讨论模式叠加层：声明式整层重绘（无动画、无基准 hack），变化即全量呈现；
 // post 保证叠加画布 v-if 挂载完成后再绘制
