@@ -101,6 +101,21 @@ var demoBasicUserTpl = template.Must(template.New("demo_basic_user").Parse(demoB
 //go:embed templates/demo_basic.html
 var demoBasicTemplate string
 
+// ---- Demo 3D 环节生成（单阶段，纯数据场景描述 JSON） ----
+
+// demo3DSystemPrompt Demo 3D 的 system 提示词（行为边界 / 内置组件参数表 / few-shot）。
+//
+//go:embed prompts/demo_3d.md
+var demo3DSystemPrompt string
+
+// demo3DUserPromptTpl Demo 3D user 提示词模板源码。
+//
+//go:embed prompts/demo_3d_user.md
+var demo3DUserPromptTpl string
+
+// demo3DUserTpl 解析后的 Demo 3D user 模板。
+var demo3DUserTpl = template.Must(template.New("demo_3d_user").Parse(demo3DUserPromptTpl))
+
 // buildPromptMessages 渲染 user 提示词模板并拼接 system 提示词。
 func buildPromptMessages(tpl *template.Template, data any, system string) ([]model.ChatMessage, error) {
 	var buf bytes.Buffer

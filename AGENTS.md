@@ -44,7 +44,8 @@ agent-classroom/
 │   │   │   ├── generate_outline.go # 大纲生成域：任务状态机 + 生成首步文档提取幂等收敛 + LLM 生成核心 + 大纲查询/版本管理
 │   │   │   ├── generator_slide.go  # Slide 环节生成
 │   │   │   ├── generator_quiz.go   # 测试题生成
-│   │   │   ├── generator_demo.go   # 互动演示生成（HTML 模板拼接 + CSP 禁网络）
+│   │   │   ├── generator_demo.go   # Demo Basic 生成（HTML 三段拼接 + CSP 禁网络）
+│   │   │   ├── generator_demo3d.go # Demo 3D 环节生成（纯数据场景描述 JSON，见 docs/3D演示数据结构.md）
 │   │   │   ├── discussion.go       # 讨论模式：上下文装配 + agent loop 驱动 + 消息落库
 │   │   │   ├── discussion_tools.go # 讨论模式工具 schema 定义与按环节类型裁剪
 │   │   │   ├── prompt.go           # go:embed 引入 prompts/ 下的提示词

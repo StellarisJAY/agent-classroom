@@ -117,9 +117,9 @@ func NewSectionService(
 			types.SectionTypeSlide: &slideGenerator{},
 			types.SectionTypeQuiz:  &quizGenerator{questionRepo: questionRepo},
 			// demo 三种类型拆分为独立环节类型，各自维护生成流程、提示词与代码模板。
-			// demo_basic 已实现真实生成（后端拼接模板 + LLM 只出逻辑）；
-			// demo_3d / demo_function 仍为占位，后续按同样模式补全。
-			types.SectionTypeDemo3D:       &stubGenerator{sectionType: types.SectionTypeDemo3D},
+			// demo_basic 走三段式 HTML 拼接；demo_3d 产出纯数据场景描述 JSON；
+			// demo_function 仍为占位。
+			types.SectionTypeDemo3D:       &demo3DGenerator{},
 			types.SectionTypeDemoFunction: &stubGenerator{sectionType: types.SectionTypeDemoFunction},
 			types.SectionTypeDemoBasic:    &demoBasicGenerator{},
 		},
