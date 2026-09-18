@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -313,7 +314,8 @@ func (s *SectionService) EnsureGeneration(ctx context.Context, userID, courseID 
 		return err
 	}
 	switch course.Status {
-	case types.CourseStatusGenerating, types.CourseStatusOutlineConfirmed:
+	case types.CourseStatusGenerating, types.CourseStatusOutlineConfirmed,
+		types.CourseStatusFailed, types.CourseStatusPartialFailed:
 	default:
 		return types.ErrOutlineNotConfirmed
 	}
@@ -329,8 +331,9 @@ func (s *SectionService) ensureLoop(userID types.ID, course *types.Course) {
 	go s.runGeneration(userID, course)
 }
 
-// runGeneration 串行生成课程全部未完成环节。任何一处失败即中止：失败环节置回 pending，
-// 课程停留 generating；前端据此展示「重试继续生成」并经 EnsureGeneration 续跑。
+// runGeneration 串行生成课程全部未完成环节。单环节失败不中止其余环节，
+// 失败环节置为 failed 并记录失败原因（供开发排查）；
+// 循环结束后按环节状态重评课程状态（全 done → completed，存在 failed → failed / partial_failed）。
 func (s *SectionService) runGeneration(userID types.ID, course *types.Course) {
 	ctx := context.Background()
 	defer s.runs.finish(course.ID)
@@ -354,37 +357,185 @@ func (s *SectionService) runGeneration(userID types.ID, course *types.Course) {
 
 	for i := range secs {
 		sec := &secs[i]
-		if sec.Status == types.SectionStatusDone {
+		switch sec.Status {
+		case types.SectionStatusDone:
 			genCtx.Done = append(genCtx.Done, *sec)
+		case types.SectionStatusFailed:
+			// failed 环节不自动重试：仅经 RetrySection 恢复，避免自动循环反复失败。
 			continue
+		default:
+			// 续跑时 pending 与卡在 generating（中断残留）的环节重新派发生成。
+			if err := s.generateSection(ctx, sec, genCtx); err != nil {
+				slog.Warn("generate section failed",
+					"section_id", sec.ID.String(), "error", err)
+			} else {
+				genCtx.Done = append(genCtx.Done, *sec)
+			}
 		}
-		if err := s.sectionRepo.UpdateStatus(ctx, sec.ID, types.SectionStatusGenerating); err != nil {
-			slog.Error("update section status failed", "section_id", sec.ID.String(), "error", err)
-			return
-		}
-
-		gen := s.generators[sec.Type]
-		if gen == nil {
-			gen = s.generators[types.SectionTypeSlide]
-		}
-		if err := gen.Generate(ctx, sec, &genCtx); err != nil {
-			slog.Error("generate section failed", "section_id", sec.ID.String(), "error", err)
-			_ = s.sectionRepo.UpdateStatus(ctx, sec.ID, types.SectionStatusPending)
-			return
-		}
-		if err := s.sectionRepo.UpdateContentSteps(ctx, sec.ID, sec.Content, sec.Steps); err != nil {
-			slog.Error("persist section output failed", "section_id", sec.ID.String(), "error", err)
-			return
-		}
-		if err := s.sectionRepo.UpdateStatus(ctx, sec.ID, types.SectionStatusDone); err != nil {
-			slog.Error("update section status failed", "section_id", sec.ID.String(), "error", err)
-			return
-		}
-		genCtx.Done = append(genCtx.Done, *sec)
 	}
 
-	if err := s.courseRepo.UpdateStatus(ctx, course.ID, types.CourseStatusCompleted); err != nil {
-		slog.Error("update course status failed", "course_id", course.ID.String(), "error", err)
+	if err := s.evaluateCourseStatus(ctx, course.ID); err != nil {
+		slog.Error("evaluate course status failed", "course_id", course.ID.String(), "error", err)
+	}
+}
+
+// evaluateCourseStatus 生成循环结束后按环节状态重评课程状态：
+// 全部 done → completed；有 done 有 failed → partial_failed；全部 failed（无 done）→ failed；
+// 仍存在 generating/pending（理论上不应发生）→ 停留 generating。
+func (s *SectionService) evaluateCourseStatus(ctx context.Context, courseID types.ID) error {
+	secs, err := s.sectionRepo.ListByCourse(ctx, courseID)
+	if err != nil {
+		return err
+	}
+	if len(secs) == 0 {
+		return nil
+	}
+	done, failed := 0, 0
+	for i := range secs {
+		switch secs[i].Status {
+		case types.SectionStatusDone:
+			done++
+		case types.SectionStatusFailed:
+			failed++
+		}
+	}
+	status := types.CourseStatusGenerating
+	switch {
+	case done == len(secs):
+		status = types.CourseStatusCompleted
+	case done == 0 && failed == len(secs):
+		status = types.CourseStatusFailed
+	case done > 0 && done+failed == len(secs):
+		status = types.CourseStatusPartialFailed
+	}
+	return s.courseRepo.UpdateStatus(ctx, courseID, status)
+}
+
+// generateSection 生成单个环节：pending / generating(中断残留) / failed(重试) → done 或 failed。
+// 生成 / 入库失败均置 failed 并记录失败原因（供开发排查，不回退 pending）。
+// 返回 error 供上层区分成败；genCtx.Done 由调用方在成功后追加。
+func (s *SectionService) generateSection(ctx context.Context, sec *types.Section, genCtx types.GenerationContext) error {
+	if sec.Status == types.SectionStatusDone {
+		return nil
+	}
+	// 修改section到正在生成状态（顺带清空上次失败原因）
+	if err := s.sectionRepo.UpdateStatus(ctx, sec.ID, types.SectionStatusGenerating); err != nil {
+		slog.Error("update section status failed", "section_id", sec.ID.String(), "error", err)
+		return err
+	}
+
+	// section内容生成
+	gen := s.generators[sec.Type]
+	if gen == nil {
+		gen = s.generators[types.SectionTypeSlide]
+	}
+	if err := gen.Generate(ctx, sec, &genCtx); err != nil {
+		slog.Error("generate section failed", "section_id", sec.ID.String(), "error", err)
+		if ferr := s.sectionRepo.UpdateFailure(ctx, sec.ID, err.Error()); ferr != nil {
+			slog.Error("update section failure status failed", "section_id", sec.ID.String(), "error", ferr)
+		}
+		return err
+	}
+	// section生成内容入库
+	if err := s.sectionRepo.UpdateContentSteps(ctx, sec.ID, sec.Content, sec.Steps); err != nil {
+		slog.Error("persist section output failed", "section_id", sec.ID.String(), "error", err)
+		if ferr := s.sectionRepo.UpdateFailure(ctx, sec.ID, fmt.Sprintf("persist section output: %v", err)); ferr != nil {
+			slog.Error("update section failure status failed", "section_id", sec.ID.String(), "error", ferr)
+		}
+		return err
+	}
+	// 修改section状态为done
+	if err := s.sectionRepo.UpdateStatus(ctx, sec.ID, types.SectionStatusDone); err != nil {
+		slog.Error("update section status failed", "section_id", sec.ID.String(), "error", err)
+		return err
+	}
+	return nil
+}
+
+// RetrySection 重试生成单个失败环节。约束：
+//   - 须等待该课程当前生成循环结束后才能重试（运行中直接拒绝）；
+//   - 仅 status=failed 的环节可重试。
+//
+// 异步执行：再次失败保持 failed 并更新失败原因；结束后按全环节状态重评课程状态。
+func (s *SectionService) RetrySection(ctx context.Context, userID, courseID, sectionID types.ID) error {
+	if _, err := s.courseRepo.GetByID(ctx, userID, courseID); err != nil {
+		if errors.Is(err, types.ErrNotFound) {
+			return types.ErrCourseNotFound
+		}
+		return err
+	}
+	// 进程内运行权：课程生成循环尚未结束则不允许重试。
+	if !s.runs.tryStart(courseID) {
+		return types.ErrGenerationRunning
+	}
+	secs, err := s.sectionRepo.ListByCourse(ctx, courseID)
+	if err != nil {
+		s.runs.finish(courseID)
+		return err
+	}
+	var target *types.Section
+	for i := range secs {
+		if secs[i].ID == sectionID {
+			target = &secs[i]
+			break
+		}
+	}
+	if target == nil {
+		s.runs.finish(courseID)
+		return types.ErrSectionNotFound
+	}
+	if target.Status != types.SectionStatusFailed {
+		s.runs.finish(courseID)
+		return types.ErrSectionNotRetryable
+	}
+	go s.runRetryGeneration(userID, courseID, sectionID)
+	return nil
+}
+
+// runRetryGeneration 单环节重试的后台执行体：重新生成指定环节并重评课程状态。
+func (s *SectionService) runRetryGeneration(userID types.ID, courseID, sectionID types.ID) {
+	ctx := context.Background()
+	defer s.runs.finish(courseID)
+
+	// 查询出所有的sections，后面需要做课程环节的连贯性上下文
+	secs, err := s.sectionRepo.ListByCourse(ctx, courseID)
+	if err != nil {
+		slog.Error("list sections failed", "course_id", courseID.String(), "error", err)
+		return
+	}
+	// 拿到目标section
+	var target *types.Section
+	for i := range secs {
+		if secs[i].ID == sectionID {
+			target = &secs[i]
+			break
+		}
+	}
+	if target == nil || target.Status != types.SectionStatusFailed {
+		slog.Error("retry section unavailable", "course_id", courseID.String(), "section_id", sectionID.String())
+		return
+	}
+
+	// 构建课程上下文
+	course := &types.Course{ID: courseID}
+	genCtx, err := s.buildGenerationContext(ctx, userID, course)
+	if err != nil {
+		slog.Error("build generation context failed", "course_id", courseID.String(), "error", err)
+		_ = s.sectionRepo.UpdateFailure(ctx, sectionID, fmt.Sprintf("build generation context: %v", err))
+	} else {
+		// 已完成环节作为连贯性上下文（供讲解衔接参考）。
+		for i := range secs {
+			if secs[i].Status == types.SectionStatusDone {
+				genCtx.Done = append(genCtx.Done, secs[i])
+			}
+		}
+		if gerr := s.generateSection(ctx, target, genCtx); gerr != nil {
+			slog.Warn("retry generate section failed", "section_id", sectionID.String(), "error", gerr)
+		}
+	}
+	// 修改课程的生成状态
+	if err := s.evaluateCourseStatus(ctx, courseID); err != nil {
+		slog.Error("evaluate course status failed", "course_id", courseID.String(), "error", err)
 	}
 }
 

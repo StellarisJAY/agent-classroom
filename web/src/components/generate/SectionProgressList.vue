@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import type { TagProps } from 'naive-ui'
-import { NIcon, NSpin, NTag } from 'naive-ui'
-import { CheckmarkCircleOutline, SyncOutline } from '@vicons/ionicons5'
+import { NButton, NIcon, NSpin, NTag } from 'naive-ui'
+import { CheckmarkCircleOutline, CloseCircleOutline, SyncOutline } from '@vicons/ionicons5'
 
 import { SectionStatus, SectionType, type GenerationSection } from '@/api/course'
 
 defineProps<{ sections: GenerationSection[] }>()
+
+const emit = defineEmits<{ retry: [sectionId: string] }>()
 
 const sectionTypeMeta: Record<string, { label: string; type: TagProps['type'] }> = {
   [SectionType.Slide]: { label: '讲解', type: 'info' },
@@ -49,6 +51,11 @@ function typeMeta(section: GenerationSection) {
         <template v-else-if="s.status === SectionStatus.Done">
           <n-icon class="sec-progress__done-icon"><CheckmarkCircleOutline /></n-icon>
           <n-tag size="small" :bordered="false" type="success">已完成</n-tag>
+        </template>
+        <template v-else-if="s.status === SectionStatus.Failed">
+          <n-icon class="sec-progress__failed-icon"><CloseCircleOutline /></n-icon>
+          <n-tag size="small" :bordered="false" type="error">生成失败</n-tag>
+          <n-button size="tiny" type="primary" ghost @click="emit('retry', s.id)">重试</n-button>
         </template>
         <template v-else>
           <n-icon class="sec-progress__clock-icon"><SyncOutline /></n-icon>
@@ -144,6 +151,11 @@ function typeMeta(section: GenerationSection) {
 .sec-progress__done-icon {
   font-size: 18px;
   color: var(--app-success, #18a058);
+}
+
+.sec-progress__failed-icon {
+  font-size: 18px;
+  color: var(--app-error, #d03050);
 }
 
 .sec-progress__clock-icon {

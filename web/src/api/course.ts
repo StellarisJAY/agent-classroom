@@ -1,11 +1,13 @@
 import { request } from './http'
 
-/** 课程状态：draft | outline_confirmed | generating | completed */
+/** 课程状态：draft | outline_confirmed | generating | completed | failed | partial_failed */
 export const CourseStatus = {
   Draft: 'draft',
   OutlineConfirmed: 'outline_confirmed',
   Generating: 'generating',
   Completed: 'completed',
+  Failed: 'failed',
+  PartialFailed: 'partial_failed',
 } as const
 export type CourseStatusValue = (typeof CourseStatus)[keyof typeof CourseStatus]
 
@@ -79,11 +81,12 @@ export interface OutlineSection {
   description: string
 }
 
-/** 环节生成状态：pending | generating | done */
+/** 环节生成状态：pending | generating | done | failed */
 export const SectionStatus = {
   Pending: 'pending',
   Generating: 'generating',
   Done: 'done',
+  Failed: 'failed',
 } as const
 export type SectionStatusValue = (typeof SectionStatus)[keyof typeof SectionStatus]
 
@@ -241,6 +244,17 @@ export function getSections(courseId: string): Promise<GenerationSection[]> {
 export function resumeGeneration(courseId: string): Promise<Record<string, never>> {
   return request<Record<string, never>>({
     url: `/courses/${courseId}/generate/resume`,
+    method: 'post',
+  })
+}
+
+/** 重试生成单个失败环节（须等课程生成循环结束后调用）。 */
+export function retrySection(
+  courseId: string,
+  sectionId: string,
+): Promise<Record<string, never>> {
+  return request<Record<string, never>>({
+    url: `/courses/${courseId}/sections/${sectionId}/retry`,
     method: 'post',
   })
 }

@@ -16,6 +16,10 @@ const (
 	CourseStatusGenerating = "generating"
 	// CourseStatusCompleted 内容已生成完成，可学习
 	CourseStatusCompleted = "completed"
+	// CourseStatusFailed 内容生成全部环节失败（经单环节重试恢复）
+	CourseStatusFailed = "failed"
+	// CourseStatusPartialFailed 内容生成部分环节失败，其余已完成（可学习已完成部分）
+	CourseStatusPartialFailed = "partial_failed"
 )
 
 // ProgressStatus 学习进度（每用户每课程），对应 progress.status

@@ -19,6 +19,8 @@ const (
 	SectionStatusGenerating = "generating"
 	// SectionStatusDone 已生成完成
 	SectionStatusDone = "done"
+	// SectionStatusFailed 生成失败（重试后仍失败；原因存 fail_reason，经单环节重试 API 恢复）
+	SectionStatusFailed = "failed"
 )
 
 // ---- 实体 ----
@@ -36,10 +38,12 @@ type Section struct {
 	Status          string         `gorm:"type:section_status;not null;default:pending" json:"status"`
 	Content         datatypes.JSON `gorm:"type:jsonb" json:"content,omitempty"`
 	Steps           datatypes.JSON `gorm:"type:jsonb" json:"steps,omitempty"`
-	CreateBy        *ID            `gorm:"type:uuid" json:"-"`
-	CreateAt        time.Time      `gorm:"not null;default:now()" json:"-"`
-	UpdateBy        *ID            `gorm:"type:uuid" json:"-"`
-	UpdateAt        time.Time      `gorm:"not null;default:now()" json:"-"`
+	// FailReason 最近一次生成失败的原因（仅 failed 状态有值；成功/重试开始后清空），供开发排查。
+	FailReason *string   `gorm:"type:text" json:"fail_reason,omitempty"`
+	CreateBy   *ID       `gorm:"type:uuid" json:"-"`
+	CreateAt   time.Time `gorm:"not null;default:now()" json:"-"`
+	UpdateBy   *ID       `gorm:"type:uuid" json:"-"`
+	UpdateAt   time.Time `gorm:"not null;default:now()" json:"-"`
 }
 
 // TableName 指定表名
@@ -95,6 +99,12 @@ var (
 	ErrOutlineAlreadyConfirmed = NewError(CodeBadRequest, "大纲已确认，不能重复确认")
 	// ErrContentGenerate 环节内容生成失败
 	ErrContentGenerate = NewError(CodeInternalError, "课程内容生成失败")
+	// ErrSectionNotFound 指定环节不存在或不属于该课程
+	ErrSectionNotFound = NewError(CodeNotFound, "环节不存在")
+	// ErrSectionNotRetryable 仅失败（failed）环节可重试生成
+	ErrSectionNotRetryable = NewError(CodeBadRequest, "仅生成失败的环节可重试")
+	// ErrGenerationRunning 课程生成循环进行中，须等待本轮结束后再重试
+	ErrGenerationRunning = NewError(CodeConflict, "课程内容正在生成中，请等待本轮生成结束后再重试")
 )
 
 // ---- 接口 ----
@@ -105,8 +115,10 @@ type SectionRepo interface {
 	CreateBulk(ctx context.Context, sections []Section) error
 	// ListByCourse 返回某课程全部环节，按 position 升序。
 	ListByCourse(ctx context.Context, courseID ID) ([]Section, error)
-	// UpdateStatus 更新环节生成状态。
+	// UpdateStatus 更新环节生成状态；置为非 failed 状态时顺带清空 fail_reason。
 	UpdateStatus(ctx context.Context, id ID, status string) error
+	// UpdateFailure 将环节置为失败并记录失败原因（供开发排查）。
+	UpdateFailure(ctx context.Context, id ID, reason string) error
 	// UpdateContentSteps 更新环节 content 与 steps 产物。
 	UpdateContentSteps(ctx context.Context, id ID, content, steps datatypes.JSON) error
 }
@@ -122,8 +134,11 @@ type SectionService interface {
 	// ConfirmOutline 确认大纲并物化环节，随后立即启动后台串行生成，返回物化后的环节进度。
 	ConfirmOutline(ctx context.Context, userID, courseID ID, req ConfirmOutlineReq) ([]SectionProgress, error)
 	// EnsureGeneration 确保某课程的内容生成循环在运行（未运行则启动/续跑）。
-	// 用于中断后恢复；课程须已确认大纲或处于生成中。
+	// 用于中断后恢复；课程须已确认大纲、生成中或存在失败环节。
 	EnsureGeneration(ctx context.Context, userID, courseID ID) error
+	// RetrySection 重试生成单个失败环节。
+	// 仅当环节存在且状态为 failed 时有效；须等待该课程生成循环结束后才能重试。
+	RetrySection(ctx context.Context, userID, courseID, sectionID ID) error
 	// ListProgress 返回某课程全部环节当前进度。
 	ListProgress(ctx context.Context, userID, courseID ID) ([]SectionProgress, error)
 	// GetLearnDetail 返回课程学习详情：课程摘要 + 有序环节（slide 含 content/steps 产物透传）。

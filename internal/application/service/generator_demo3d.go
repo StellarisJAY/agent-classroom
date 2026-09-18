@@ -33,14 +33,14 @@ type demo3DScene struct {
 // Scale 允许数字（整体倍率）或三轴数组，前端按两者兼容解析。
 // ParentID 为场景树父子关系（缺省挂场景根）：不做后端校验，悬空/成环由前端剥环兜底。
 type demo3DGeometry struct {
-	ID         string          `json:"id"`
-	Type       string          `json:"type"`
-	Args       []float64       `json:"args,omitempty"`
-	Position   demo3DVec3      `json:"position,omitempty"`
-	Rotation   demo3DVec3      `json:"rotation,omitempty"`
-	Scale      any             `json:"scale,omitempty"`
-	MaterialID string          `json:"materialId,omitempty"`
-	ParentID   string          `json:"parentId,omitempty"`
+	ID         string     `json:"id"`
+	Type       string     `json:"type"`
+	Args       []float64  `json:"args,omitempty"`
+	Position   demo3DVec3 `json:"position,omitempty"`
+	Rotation   demo3DVec3 `json:"rotation,omitempty"`
+	Scale      any        `json:"scale,omitempty"`
+	MaterialID string     `json:"materialId,omitempty"`
+	ParentID   string     `json:"parentId,omitempty"`
 }
 
 // demo3DMaterial 材质。

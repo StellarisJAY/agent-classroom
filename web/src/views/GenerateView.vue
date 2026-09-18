@@ -139,6 +139,16 @@ function retryContent() {
   generationStore.resumeGeneration(courseId.value)
 }
 
+/** 单环节重试（仅失败环节可重试）。 */
+function retrySection(sectionId: string) {
+  generationStore.retrySection(courseId.value, sectionId)
+}
+
+/** 是否存在失败环节（决定失败页展示单环节重试还是整体续跑）。 */
+const hasFailedSection = computed(() =>
+  generationStore.progress.some((s) => s.status === 'failed'),
+)
+
 function goLearn() {
   router.push(`/course/${courseId.value}/learn`)
 }
@@ -191,11 +201,21 @@ onBeforeUnmount(() => {
 
     <!-- 内容生成失败 -->
     <div v-else-if="generationStore.contentPhase === 'error'" class="generate-view__error">
-      <n-empty :description="generationStore.contentError || '课程内容生成失败'">
-        <template #extra>
-          <n-button type="primary" @click="retryContent">重试继续生成</n-button>
-        </template>
-      </n-empty>
+      <SectionProgressList
+        v-if="hasFailedSection && generationStore.progress.length"
+        :sections="generationStore.progress"
+        @retry="retrySection"
+      />
+      <n-empty
+        v-else
+        :description="generationStore.contentError || '课程内容生成失败'"
+      />
+      <div class="generate-view__failed-actions">
+        <n-button v-if="!hasFailedSection" type="primary" @click="retryContent">
+          重试继续生成
+        </n-button>
+        <p v-else class="generate-view__note">可对失败的环节单独重试；生成完成后进入学习。</p>
+      </div>
     </div>
 
     <!-- 内容生成完成 -->
@@ -314,8 +334,21 @@ onBeforeUnmount(() => {
 
 .generate-view__error {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
   padding: 40px 0;
+}
+
+.generate-view__error > :first-child {
+  width: 100%;
+}
+
+.generate-view__failed-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
 }
 
 .generate-view__done-title,

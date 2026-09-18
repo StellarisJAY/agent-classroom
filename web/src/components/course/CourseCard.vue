@@ -19,6 +19,10 @@ const statusMeta = computed<TagMeta>(() => {
       return { label: '已完成', type: 'success' }
     case CourseStatus.Generating:
       return { label: '生成中', type: 'info' }
+    case CourseStatus.PartialFailed:
+      return { label: '部分失败', type: 'warning' }
+    case CourseStatus.Failed:
+      return { label: '生成失败', type: 'error' }
     case CourseStatus.OutlineConfirmed:
       return { label: '待生成', type: 'warning' }
     default:

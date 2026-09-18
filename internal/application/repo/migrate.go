@@ -20,7 +20,8 @@ func Migrate(db *gorm.DB) error {
 
 	if err := ensureEnum(db, "course_status",
 		types.CourseStatusDraft, types.CourseStatusOutlineConfirmed,
-		types.CourseStatusGenerating, types.CourseStatusCompleted); err != nil {
+		types.CourseStatusGenerating, types.CourseStatusCompleted,
+		types.CourseStatusFailed, types.CourseStatusPartialFailed); err != nil {
 		return err
 	}
 	if err := ensureEnum(db, "progress_status",
@@ -42,7 +43,7 @@ func Migrate(db *gorm.DB) error {
 		}
 	}
 	if err := ensureEnum(db, "section_status",
-		types.SectionStatusPending, types.SectionStatusGenerating, types.SectionStatusDone); err != nil {
+		types.SectionStatusPending, types.SectionStatusGenerating, types.SectionStatusDone, types.SectionStatusFailed); err != nil {
 		return err
 	}
 	if err := ensureEnum(db, "question_type",
@@ -56,6 +57,15 @@ func Migrate(db *gorm.DB) error {
 	// 兼容已初始化过的旧库：message_role 原只含 user/assistant，讨论模式补 tool。
 	if err := ensureEnumValue(db, "message_role", types.MessageRoleTool); err != nil {
 		return err
+	}
+	// 兼容已初始化过的旧库：补充生成失败相关枚举值（section_status / course_status）。
+	if err := ensureEnumValue(db, "section_status", types.SectionStatusFailed); err != nil {
+		return err
+	}
+	for _, v := range []string{types.CourseStatusFailed, types.CourseStatusPartialFailed} {
+		if err := ensureEnumValue(db, "course_status", v); err != nil {
+			return err
+		}
 	}
 
 	if err := migrateCourseSchema(db); err != nil {
@@ -235,12 +245,15 @@ func migrateSectionSchema(db *gorm.DB) error {
 			status           section_status NOT NULL DEFAULT 'pending',
 			content          jsonb,
 			steps            jsonb,
+			fail_reason      text,
 			create_by        uuid REFERENCES users(id) ON DELETE SET NULL,
 			create_at        timestamptz NOT NULL DEFAULT now(),
 			update_by        uuid REFERENCES users(id) ON DELETE SET NULL,
 			update_at        timestamptz NOT NULL DEFAULT now()
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uniq_section_course_position ON section (course_id, position)`,
+		// 兼容旧库：失败原因列（新库由 CREATE TABLE 直接包含）。
+		`ALTER TABLE section ADD COLUMN IF NOT EXISTS fail_reason text`,
 	}
 	for _, stmt := range stmts {
 		if err := db.Exec(stmt).Error; err != nil {

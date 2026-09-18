@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -189,6 +190,65 @@ func TestSlideGenerateDropsFailedImage(t *testing.T) {
 	require.NoError(t, json.Unmarshal(sec.Content, &content))
 	require.Len(t, content.Elements, 1)
 	require.Equal(t, "text", content.Elements[0].Type)
+}
+
+// 带并发观测的 fake image 客户端：统计并发峰值，按 prompt 返回固定成功/失败。
+type fakeConcurrentImageClient struct {
+	mu       sync.Mutex
+	inFlight int
+	peak     int
+	calls    int
+	failures map[string]error // prompt -> 固定错误（未命中 = 成功）
+	gate     chan struct{}
+	gateOnce sync.Once
+}
+
+func (f *fakeConcurrentImageClient) GenerateImage(ctx context.Context, req model.ImageRequest) (*model.ImageResponse, error) {
+	f.mu.Lock()
+	f.calls++
+	f.inFlight++
+	f.peak = max(f.peak, f.inFlight)
+	rerr := f.failures[req.Prompt]
+	// 达到并发阈值时打开闸门：证明多个请求真正同时在途。
+	if f.inFlight >= 2 {
+		f.gateOnce.Do(func() { close(f.gate) })
+	}
+	f.mu.Unlock()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-f.gate:
+	}
+	f.mu.Lock()
+	f.inFlight--
+	f.mu.Unlock()
+	if rerr != nil {
+		return nil, rerr
+	}
+	return &model.ImageResponse{Data: []byte("png-bytes")}, nil
+}
+
+const testSlideContentThreeImagesJSON = `{"width":1280,"height":720,"background":"#ffffff","accent":"#14b8a6","elements":[{"id":"t1","type":"text","content":"标题"},{"id":"i1","type":"image","x":0,"y":0,"width":480,"height":360,"prompt":"diagram a"},{"id":"i2","type":"image","x":500,"y":0,"width":480,"height":360,"prompt":"diagram b"},{"id":"i3","type":"image","x":0,"y":400,"width":480,"height":300,"prompt":"diagram c"}]}`
+
+// 多张图片并发生成：至少两张同时在途；结果按原元素顺序回填；单张失败（重试后仍失败）仅剔除自身。
+func TestSlideGenerateConcurrentImages(t *testing.T) {
+	img := &fakeConcurrentImageClient{failures: map[string]error{"diagram b": errors.New("boom")}, gate: make(chan struct{})}
+	client := &seqLLM{contents: []string{testSlideContentThreeImagesJSON, testSlideStepsSimpleJSON}}
+	gc := genImageCtx(img, client)
+	sec := genSection("内存布局", nil)
+	err := (&slideGenerator{}).Generate(context.Background(), sec, gc)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, img.calls, 3, "三张图都应发起生成调用（失败的可重试）")
+	require.GreaterOrEqual(t, img.peak, 2, "应存在至少两张图片并发生成")
+
+	var content types.SlideContent
+	require.NoError(t, json.Unmarshal(sec.Content, &content))
+	require.Len(t, content.Elements, 3, "仅失败图片 i2 被剔除")
+	require.Equal(t, "text", content.Elements[0].Type)
+	require.Equal(t, "i1", content.Elements[1].ID, "剩余图片按原位置排列")
+	require.Equal(t, "i3", content.Elements[2].ID)
+	require.True(t, strings.HasSuffix(content.Elements[1].Src, "/i1.png"), "src 按原元素位置回填")
+	require.True(t, strings.HasSuffix(content.Elements[2].Src, "/i3.png"))
 }
 
 // 图片元素缺省 prompt（无 src）时在校验阶段被剔除。

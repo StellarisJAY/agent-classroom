@@ -87,6 +87,9 @@ const entries = computed(() =>
             <span v-else-if="e.status === 'pending'" class="section-drawer__badge is-pending">
               待生成
             </span>
+            <span v-else-if="e.status === 'failed'" class="section-drawer__badge is-failed">
+              失败
+            </span>
             <span v-else class="section-drawer__badge" :data-type="e.type">{{ e.label }}</span>
           </button>
         </nav>
@@ -198,6 +201,9 @@ const entries = computed(() =>
 .section-drawer__badge.is-pending {
   color: #94a3b8;
 }
+.section-drawer__badge.is-failed {
+  color: #d03050;
+}
 .section-drawer__badge[data-type='quiz'] {
   color: #b45309;
 }
@@ -207,7 +213,8 @@ const entries = computed(() =>
 .section-drawer__item.is-active .section-drawer__badge[data-type='quiz'],
 .section-drawer__item.is-active .section-drawer__badge[data-type^='demo_'],
 .section-drawer__item.is-active .section-drawer__badge.is-generating,
-.section-drawer__item.is-active .section-drawer__badge.is-pending {
+.section-drawer__item.is-active .section-drawer__badge.is-pending,
+.section-drawer__item.is-active .section-drawer__badge.is-failed {
   color: #fff;
 }
 </style>

@@ -112,8 +112,20 @@ function retry() {
             </n-button>
           </div>
 
+          <!-- 该环节生成失败 → 单环节重试 -->
+          <div v-if="store.sectionFailed" class="learn-view__stalled">
+            <p>该环节生成失败</p>
+            <n-button
+              size="small"
+              type="primary"
+              @click="store.retrySection(store.currentSection!.id)"
+            >
+              重试生成
+            </n-button>
+          </div>
+
           <!-- 该环节尚未生成完成 → 转圈等待 -->
-          <div v-if="store.pendingSection" class="learn-view__center">
+          <div v-else-if="store.pendingSection" class="learn-view__center">
             <n-spin size="medium" />
             <span class="learn-view__pending-hint">该环节正在生成中，请稍候…</span>
           </div>

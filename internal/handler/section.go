@@ -95,3 +95,26 @@ func (h *SectionHandler) Generate(c *gin.Context) {
 	}
 	OK(c, gin.H{})
 }
+
+// Retry 重试生成单个失败环节（须课程生成循环已结束）。
+func (h *SectionHandler) Retry(c *gin.Context) {
+	userID, ok := currentUser(c)
+	if !ok {
+		return
+	}
+	courseID, err := pathID(c)
+	if err != nil {
+		Error(c, err)
+		return
+	}
+	sectionID, err := pathParamID(c, "sectionId")
+	if err != nil {
+		Error(c, err)
+		return
+	}
+	if err := h.svc.RetrySection(c.Request.Context(), userID, courseID, sectionID); err != nil {
+		Error(c, err)
+		return
+	}
+	OK(c, gin.H{})
+}

@@ -69,13 +69,18 @@ func bindJSON(c *gin.Context, dst any) error {
 
 // pathID 解析 :id 路由参数并校验为合法 ID
 func pathID(c *gin.Context) (types.ID, error) {
-	id := c.Param("id")
-	if id == "" {
+	return pathParamID(c, "id")
+}
+
+// pathParamID 解析指定名称的路由路径参数并校验为合法 ID。
+func pathParamID(c *gin.Context, name string) (types.ID, error) {
+	raw := c.Param(name)
+	if raw == "" {
 		return types.NilID, types.ErrInvalidRequest
 	}
-	parsed, err := types.ParseID(id)
+	parsed, err := types.ParseID(raw)
 	if err != nil {
-		return types.NilID, types.NewError(types.CodeValidationError, "id 格式不正确")
+		return types.NilID, types.NewError(types.CodeValidationError, name+" 格式不正确")
 	}
 	return parsed, nil
 }

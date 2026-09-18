@@ -40,6 +40,7 @@ export const SectionStatus = {
   Pending: 'pending',
   Generating: 'generating',
   Done: 'done',
+  Failed: 'failed',
 } as const
 export type SectionStatusValue = (typeof SectionStatus)[keyof typeof SectionStatus]
 

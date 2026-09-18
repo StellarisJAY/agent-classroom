@@ -20,6 +20,7 @@ type mockSectionRepo struct {
 	listBy     func(types.ID) ([]types.Section, error)
 	updateSt   func(types.ID, string) error
 	updateCS   func(types.ID, datatypes.JSON, datatypes.JSON) error
+	updateFail func(types.ID, string) error
 }
 
 var _ types.SectionRepo = (*mockSectionRepo)(nil)
@@ -45,6 +46,13 @@ func (m *mockSectionRepo) UpdateStatus(_ context.Context, id types.ID, status st
 func (m *mockSectionRepo) UpdateContentSteps(_ context.Context, id types.ID, content, steps datatypes.JSON) error {
 	if m.updateCS != nil {
 		return m.updateCS(id, content, steps)
+	}
+	return nil
+}
+
+func (m *mockSectionRepo) UpdateFailure(_ context.Context, id types.ID, reason string) error {
+	if m.updateFail != nil {
+		return m.updateFail(id, reason)
 	}
 	return nil
 }
@@ -250,6 +258,17 @@ func TestEnsureGenerationSerialCompletion(t *testing.T) {
 				copy(cp, sections)
 				return cp, nil
 			},
+			// 状态落库同步回来源切片，模拟 DB 状态演进（evaluateCourseStatus 依赖）。
+			updateSt: func(id types.ID, st string) error {
+				qMu.Lock()
+				defer qMu.Unlock()
+				for i := range sections {
+					if sections[i].ID == id {
+						sections[i].Status = st
+					}
+				}
+				return nil
+			},
 		},
 		&mockQuestionRepo{
 			replaceBy: func(sectionID types.ID, qs []types.Question) error {
@@ -288,4 +307,218 @@ func TestEnsureGenerationSerialCompletion(t *testing.T) {
 	require.Equal(t, types.CourseStatusCompleted, completedStatus)
 	quizSec := sections[1]
 	require.Len(t, replacedBy[quizSec.ID], 2, "quiz 环节应把生成题目写入 questionRepo")
+}
+
+// waitCourseStatus 轮询等待课程状态演进为 want（后台生成循环异步执行）。
+func waitFor(t *testing.T, want func() bool, msg string) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		if want() {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal(msg)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+// 生成失败（LLM 持续产出非法内容）→ 环节置 failed 并记录原因，不回退 pending；
+// 其余环节正常完成 → 课程置 partial_failed；循环不中止。
+func TestRunGenerationFailureMarksFailedAndContinues(t *testing.T) {
+	uid := types.NewID()
+	cid := types.NewID()
+	kpJSON, _ := json.Marshal([]string{"a"})
+
+	sections := []types.Section{
+		{ID: types.NewID(), CourseID: cid, Position: 1, Type: types.SectionTypeSlide, Title: "ok", KnowledgePoints: kpJSON, Status: types.SectionStatusPending},
+		{ID: types.NewID(), CourseID: cid, Position: 2, Type: types.SectionTypeQuiz, Title: "bad", KnowledgePoints: kpJSON, Status: types.SectionStatusPending},
+	}
+	var mu sync.Mutex
+	var courseStatus []string
+	var failureReasons map[types.ID]string
+	var statusSeq []string
+
+	// 注册表：slide 两阶段正常；quiz 返回非法 JSON（重试仍失败）。
+	registry := model.NewRegistry()
+	registry.RegisterLLM("test", func(model.ProviderConfig) model.LLMClient {
+		return &seqLLM{contents: []string{testSlideContentJSON, testSlideStepsJSON, "not-json"}}
+	})
+	svc := newSectionSvcFull(
+		&mockCourseRepo{
+			getByID: func(_, _ types.ID) (*types.Course, error) {
+				c := sampleCourse(cid, uid, types.CourseStatusOutlineConfirmed, false)
+				return &c, nil
+			},
+			updateSt: func(_ types.ID, st string) error {
+				mu.Lock()
+				courseStatus = append(courseStatus, st)
+				mu.Unlock()
+				return nil
+			},
+		},
+		&mockOutlineRepo{},
+		&mockSectionRepo{
+			listBy: func(_ types.ID) ([]types.Section, error) {
+				mu.Lock()
+				cp := make([]types.Section, len(sections))
+				copy(cp, sections)
+				mu.Unlock()
+				return cp, nil
+			},
+			updateSt: func(id types.ID, st string) error {
+				mu.Lock()
+				defer mu.Unlock()
+				statusSeq = append(statusSeq, st)
+				for i := range sections {
+					if sections[i].ID == id {
+						sections[i].Status = st
+					}
+				}
+				return nil
+			},
+			updateFail: func(id types.ID, reason string) error {
+				mu.Lock()
+				defer mu.Unlock()
+				statusSeq = append(statusSeq, types.SectionStatusFailed)
+				if failureReasons == nil {
+					failureReasons = map[types.ID]string{}
+				}
+				failureReasons[id] = reason
+				for i := range sections {
+					if sections[i].ID == id {
+						sections[i].Status = types.SectionStatusFailed
+					}
+				}
+				return nil
+			},
+		},
+		&mockQuestionRepo{},
+		registry,
+	)
+	require.NoError(t, svc.EnsureGeneration(context.Background(), uid, cid))
+
+	waitFor(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(courseStatus) > 0 && courseStatus[len(courseStatus)-1] == types.CourseStatusPartialFailed
+	}, "生成循环未在预期时间内演进到 partial_failed")
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, types.CourseStatusPartialFailed, courseStatus[len(courseStatus)-1])
+	require.True(t, statusSeqContains(statusSeq, types.SectionStatusFailed), "失败环节应置 failed")
+	require.NotEmpty(t, failureReasons[sections[1].ID], "失败原因应入库供排查")
+	require.Equal(t, types.SectionStatusDone, sections[0].Status, "未失败环节应正常完成，循环不中止")
+}
+
+// statusSeqContains 判断状态序列中出现过指定状态。
+func statusSeqContains(seq []string, st string) bool {
+	for _, v := range seq {
+		if v == st {
+			return true
+		}
+	}
+	return false
+}
+
+// RetrySection 约束与成功路径：
+//   - 运行权被占用时重试被拒绝（须等本轮生成结束）；
+//   - 非 failed 环节重试被拒绝；
+//   - failed 环节重试成功后课程状态重评（partial_failed → completed）。
+func TestRetrySection(t *testing.T) {
+	uid := types.NewID()
+	cid := types.NewID()
+	sid := types.NewID()
+
+	sections := []types.Section{
+		{ID: types.NewID(), CourseID: cid, Position: 1, Type: types.SectionTypeSlide, Title: "ok", Status: types.SectionStatusDone},
+		{ID: sid, CourseID: cid, Position: 2, Type: types.SectionTypeQuiz, Title: "bad", Status: types.SectionStatusFailed},
+	}
+	var mu sync.Mutex
+	courseStatus := types.CourseStatusPartialFailed
+	var failReasons map[types.ID]string
+	var statuses []string
+
+	svc := newSectionSvcFull(
+		&mockCourseRepo{
+			getByID: func(_, _ types.ID) (*types.Course, error) {
+				mu.Lock()
+				defer mu.Unlock()
+				c := sampleCourse(cid, uid, courseStatus, false)
+				return &c, nil
+			},
+			updateSt: func(_ types.ID, st string) error {
+				mu.Lock()
+				defer mu.Unlock()
+				courseStatus = st
+				return nil
+			},
+		},
+		&mockOutlineRepo{},
+		&mockSectionRepo{
+			listBy: func(_ types.ID) ([]types.Section, error) {
+				mu.Lock()
+				defer mu.Unlock()
+				cp := make([]types.Section, len(sections))
+				copy(cp, sections)
+				return cp, nil
+			},
+			updateSt: func(id types.ID, st string) error {
+				mu.Lock()
+				defer mu.Unlock()
+				for i := range sections {
+					if sections[i].ID == id {
+						sections[i].Status = st
+					}
+				}
+				statuses = append(statuses, st)
+				return nil
+			},
+			updateFail: func(id types.ID, reason string) error {
+				mu.Lock()
+				defer mu.Unlock()
+				if failReasons == nil {
+					failReasons = map[types.ID]string{}
+				}
+				failReasons[id] = reason
+				for i := range sections {
+					if sections[i].ID == id {
+						sections[i].Status = types.SectionStatusFailed
+					}
+				}
+				return nil
+			},
+		},
+		&mockQuestionRepo{},
+		testRegistry(testQuizQuestionsJSON),
+	)
+	svcConcrete := svc.(*SectionService)
+
+	// ① 运行权被占用 → 拒绝重试（须等生成循环结束）。
+	require.True(t, svcConcrete.runs.tryStart(cid))
+	require.ErrorIs(t, svc.RetrySection(context.Background(), uid, cid, sid), types.ErrGenerationRunning)
+	svcConcrete.runs.finish(cid)
+
+	// ② 非 failed 环节 → 拒绝重试。
+	require.ErrorIs(t, svc.RetrySection(context.Background(), uid, cid, sections[0].ID), types.ErrSectionNotRetryable)
+
+	// ③ 不存在的环节 → 报错。
+	require.ErrorIs(t, svc.RetrySection(context.Background(), uid, cid, types.NewID()), types.ErrSectionNotFound)
+
+	// ④ failed 环节重试成功 → 课程状态重评为 completed。
+	require.NoError(t, svc.RetrySection(context.Background(), uid, cid, sid))
+	waitFor(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return courseStatus == types.CourseStatusCompleted
+	}, "重试后课程状态未在预期时间内重评为 completed")
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, types.CourseStatusCompleted, courseStatus)
+	require.Equal(t, types.SectionStatusDone, sections[1].Status)
+	require.Empty(t, failReasons[sid], "重试成功后不应保留失败原因")
 }

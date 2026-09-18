@@ -244,16 +244,27 @@ export const useGenerationStore = defineStore('generation', () => {
     }
     activeCourseId.value = courseId
     progress.value = secs
-    contentPhase.value = secs.every((s) => s.status === courseApi.SectionStatus.Done)
-      ? 'done'
-      : 'generating'
-    startContentPolling(courseId)
+    contentPhase.value = contentPhaseOf(secs)
+    if (contentPhase.value === 'generating') {
+      startContentPolling(courseId)
+    }
     return true
   }
 
+  /** 由环节状态推导内容阶段：全 done → done；存在 failed → error；否则 generating。 */
+  function contentPhaseOf(secs: GenerationSection[]): ContentPhase {
+    if (secs.length && secs.every((s) => s.status === courseApi.SectionStatus.Done)) {
+      return 'done'
+    }
+    if (secs.some((s) => s.status === courseApi.SectionStatus.Failed)) {
+      return 'error'
+    }
+    return 'generating'
+  }
+
   /**
-   * 轮询内容生成进度：全部 done → done；有环节 generating 或已有部分完成 → 继续；
-   * 全部 pending 且持续无进展 → 判定中断，提示重试。
+   * 轮询内容生成进度：全部 done → done；存在 failed → error（可单环节重试）；
+   * 有环节 generating 或已有部分完成 → 继续；全部 pending 且持续无进展 → 判定中断，提示重试。
    */
   function startContentPolling(courseId: string) {
     if (contentTimer !== null) return
@@ -277,6 +288,12 @@ export const useGenerationStore = defineStore('generation', () => {
           stopContentPolling()
           return
         }
+        if (secs.some((s) => s.status === courseApi.SectionStatus.Failed)) {
+          contentPhase.value = 'error'
+          contentError.value = '部分环节生成失败，可对失败环节单独重试'
+          stopContentPolling()
+          return
+        }
         if (secs.some((s) => s.status !== courseApi.SectionStatus.Pending)) {
           stallCount = 0
         } else if (++stallCount >= CONTENT_STALL_LIMIT) {
@@ -297,6 +314,21 @@ export const useGenerationStore = defineStore('generation', () => {
       contentTimer = setTimeout(tick, CONTENT_POLL_INTERVAL_MS)
     }
     contentTimer = setTimeout(tick, CONTENT_POLL_INTERVAL_MS)
+  }
+
+  /** 重试单个失败环节，随后继续轮询进度。 */
+  async function retrySection(courseId: string, sectionId: string): Promise<void> {
+    activeCourseId.value = courseId
+    contentPhase.value = 'generating'
+    contentError.value = ''
+    try {
+      await courseApi.retrySection(courseId, sectionId)
+    } catch (e) {
+      contentError.value = e instanceof Error ? e.message : '重试失败'
+      contentPhase.value = 'error'
+      return
+    }
+    startContentPolling(courseId)
   }
 
   function stopContentPolling() {
@@ -333,5 +365,6 @@ export const useGenerationStore = defineStore('generation', () => {
     startContent,
     resumeContentIfNeeded,
     resumeGeneration,
+    retrySection,
   }
 })

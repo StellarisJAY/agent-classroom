@@ -79,6 +79,10 @@ export const useLearnStore = defineStore('learn', () => {
   const allGenerated = computed(
     () => sections.value.length > 0 && sections.value.every((s) => s.status === 'done'),
   )
+  /** 存在生成失败的环节（需单环节重试）。 */
+  const hasFailedSection = computed(() => sections.value.some((s) => s.status === 'failed'))
+  /** 当前环节生成失败。 */
+  const sectionFailed = computed(() => currentSection.value?.status === 'failed')
 
   const slideContent = computed<SlideContent | null>(() =>
     isSlide.value ? (currentSection.value!.content as SlideContent) : null,
@@ -400,6 +404,10 @@ export const useLearnStore = defineStore('learn', () => {
       stallCount = 0
       return false
     }
+    // 存在失败环节：不自动续跑（failed 不会被自动重试），转手动单环节重试。
+    if (detailValue.sections.some((s) => s.status === 'failed')) {
+      return true
+    }
     if (++stallCount < CONTENT_STALL_LIMIT) return false
     if (autoRetryCount.value < CONTENT_MAX_AUTO_RETRY) {
       autoRetryCount.value += 1
@@ -478,6 +486,20 @@ export const useLearnStore = defineStore('learn', () => {
     startGenPolling()
   }
 
+  /** 单环节重试失败环节，随后继续轮询进度。 */
+  async function retrySection(sectionId: string) {
+    if (!courseId.value) return
+    stalled.value = false
+    stallCount = 0
+    try {
+      await courseApi.retrySection(courseId.value, sectionId)
+    } catch {
+      // 失败则保持现状，用户可再次点击
+      return
+    }
+    startGenPolling()
+  }
+
   // ---- 进度上报 ----
 
   async function markProgress(status: CourseLearnDetail['progress']) {
@@ -502,10 +524,13 @@ export const useLearnStore = defineStore('learn', () => {
     // 生成期
     pendingSection,
     allGenerated,
+    hasFailedSection,
+    sectionFailed,
     generatedCount,
     autoRetryCount,
     stalled,
     retryGeneration,
+    retrySection,
     stopGenPolling,
     slideContent,
     slideSteps,

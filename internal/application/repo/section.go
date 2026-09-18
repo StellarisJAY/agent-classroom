@@ -54,8 +54,19 @@ func (r *sectionRepo) ListByCourse(ctx context.Context, courseID types.ID) ([]ty
 	return out, nil
 }
 
+// UpdateStatus 更新环节生成状态；置为非 failed 状态时顺带清空 fail_reason
+// （重试重启/成功后自动清除上次失败原因）。
 func (r *sectionRepo) UpdateStatus(ctx context.Context, id types.ID, status string) error {
-	return r.update(ctx, id, map[string]any{"status": status})
+	fields := map[string]any{"status": status}
+	if status != types.SectionStatusFailed {
+		fields["fail_reason"] = nil
+	}
+	return r.update(ctx, id, fields)
+}
+
+// UpdateFailure 将环节置为失败并记录失败原因（供开发排查）。
+func (r *sectionRepo) UpdateFailure(ctx context.Context, id types.ID, reason string) error {
+	return r.update(ctx, id, map[string]any{"status": types.SectionStatusFailed, "fail_reason": reason})
 }
 
 func (r *sectionRepo) UpdateContentSteps(ctx context.Context, id types.ID, content, steps datatypes.JSON) error {
