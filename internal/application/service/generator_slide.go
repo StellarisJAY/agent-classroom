@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"strings"
 
+	"golang.org/x/sync/errgroup"
 	"gorm.io/datatypes"
 
 	"github.com/StellarisJAY/agent-classroom/internal/model"
@@ -173,28 +175,50 @@ func (g *slideGenerator) generateSteps(ctx context.Context, section *types.Secti
 
 // ---- 图片生成 ----
 
-// generateImages 图片生成环节：为 content 中 src 为空的 image 元素调用文生图模型，
+// 图片生成并发数上限：单 slide 内最多同时调用的文生图请求数。
+const imageConcurrencyLimit = 4
+
+// generateImages 图片生成环节：为 content 中 src 为空的 image 元素并发调用文生图模型，
 // 写入对象存储并回填 src；单图重试后仍失败则删除该元素，不阻断流程。
+// 图片生成是长时间阻塞等待的 IO 密集型 API 调用，经 errgroup 限流并发，结果按原元素顺序回填。
 // 未配置图片模型或存储时移除全部 image 元素（此时提示词亦要求不使用图片）。
 func (g *slideGenerator) generateImages(ctx context.Context, section *types.Section, genCtx *types.GenerationContext, content *types.SlideContent) {
 	if genCtx.ImageClient == nil || genCtx.Storage == nil {
 		content.Elements = dropImageElements(content.Elements)
 		return
 	}
+	pending := make([]int, 0, len(content.Elements))
+	for i, el := range content.Elements {
+		if el.Type == types.SlideElementImage && el.Src == "" {
+			pending = append(pending, i)
+		}
+	}
+	urls := make([]string, len(pending))
+	group, ctx := errgroup.WithContext(ctx)
+	group.SetLimit(imageConcurrencyLimit)
+	for j, idx := range pending {
+		group.Go(func() error {
+			el := content.Elements[idx]
+			slog.Debug("generating image element", "prompt", el.Prompt)
+			url, err := generateOneImage(ctx, section, genCtx, el)
+			if err != nil {
+				slog.Warn("slide image generation failed, dropping element",
+					"section_id", section.ID.String(), "element_id", el.ID, "error", err)
+				return nil // 单图失败不阻断其余图片
+			}
+			urls[j] = url
+			return nil
+		})
+	}
+	_ = group.Wait()
 	out := make([]types.SlideElement, 0, len(content.Elements))
-	for _, el := range content.Elements {
-		if el.Type != types.SlideElementImage || el.Src != "" {
-			out = append(out, el)
-			continue
+	for i, el := range content.Elements {
+		if hit := slices.Index(pending, i); hit >= 0 {
+			if urls[hit] == "" {
+				continue
+			}
+			el.Src = urls[hit]
 		}
-		slog.Debug("generating image element", "prompt", el.Prompt)
-		url, err := generateOneImage(ctx, section, genCtx, el)
-		if err != nil {
-			slog.Warn("slide image generation failed, dropping element",
-				"section_id", section.ID.String(), "element_id", el.ID, "error", err)
-			continue
-		}
-		el.Src = url
 		out = append(out, el)
 	}
 	content.Elements = out
