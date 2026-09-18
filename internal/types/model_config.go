@@ -9,10 +9,11 @@ import (
 
 // ---- 实体 ----
 
-// 模型配置用途。llm 用于大纲/内容/讲解生成，image 用于文生图。
+// 模型配置用途。llm 用于大纲/内容/讲解生成，image 用于文生图，tts 用于语音合成。
 const (
 	ModelKindLLM   = "llm"
 	ModelKindImage = "image"
+	ModelKindTTS   = "tts"
 )
 
 // UserModelConfig 用户模型配置实体，对应 user_model_config 表。
@@ -49,18 +50,20 @@ type ModelConfigInfo struct {
 }
 
 // ModelOptionInfo 平台全局可选模型（配置文件 model.options），不下发密钥。
+// Kind 为 tts 时携带平台内置音色清单（Voices），供建课时选择。
 type ModelOptionInfo struct {
-	Key       string `json:"key"`
-	Kind      string `json:"kind"`
-	Label     string `json:"label"`
-	IsDefault bool   `json:"is_default"`
-	Provider  string `json:"provider"`
-	Model     string `json:"model"`
+	Key       string               `json:"key"`
+	Kind      string               `json:"kind"`
+	Label     string               `json:"label"`
+	IsDefault bool                 `json:"is_default"`
+	Provider  string               `json:"provider"`
+	Model     string               `json:"model"`
+	Voices    []model.TTSVoiceTone `json:"voices,omitempty"`
 }
 
 // CreateModelConfigReq 新增模型配置请求
 type CreateModelConfigReq struct {
-	Kind      string `json:"kind" binding:"omitempty,oneof=llm image"`
+	Kind      string `json:"kind" binding:"omitempty,oneof=llm image tts"`
 	Provider  string `json:"provider" binding:"required,min=1,max=32"`
 	Model     string `json:"model" binding:"required,min=1,max=128"`
 	BaseURL   string `json:"base_url" binding:"required,max=256"`
@@ -71,7 +74,7 @@ type CreateModelConfigReq struct {
 // UpdateModelConfigReq 编辑模型配置请求。
 // api_key 留空表示不修改（避免覆盖已保存的 key）。
 type UpdateModelConfigReq struct {
-	Kind      string `json:"kind" binding:"omitempty,oneof=llm image"`
+	Kind      string `json:"kind" binding:"omitempty,oneof=llm image tts"`
 	Provider  string `json:"provider" binding:"omitempty,min=1,max=32"`
 	Model     string `json:"model" binding:"omitempty,min=1,max=128"`
 	BaseURL   string `json:"base_url" binding:"omitempty,max=256"`

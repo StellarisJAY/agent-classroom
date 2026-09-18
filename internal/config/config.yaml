@@ -63,6 +63,24 @@ model:
       model: gpt-image-1
       base_url: https://api.openai.com/v1
       api_key: ""
+    # 语音合成（kind: tts）：音色为平台内置清单（见 model.TTSVoiceCatalog），
+    # 适配器负责映射到各供应商音色参数；语速与音色在建课时选择。TTS 通常不设默认。
+    - key: gpt-4o-mini-tts
+      kind: tts
+      label: GPT-4o mini TTS
+      provider: openai
+      model: gpt-4o-mini-tts
+      base_url: https://api.openai.com/v1
+      api_key: ""
+    # 阿里云百炼 Qwen-TTS：base_url 填到接口前缀，适配器追加 multimodal-generation 路径。
+    # 不支持语速参数，未知音色回退默认音色；音色 ID 仍用平台内置清单。
+    - key: qwen3-tts-flash
+      kind: tts
+      label: 通义千问 Qwen3-TTS
+      provider: bailian
+      model: qwen3-tts-flash
+      base_url: https://dashscope.aliyuncs.com/api/v1/services/aigc
+      api_key: ""
   # 非流式请求（大纲 / 环节内容生成）超时；思考模式 max 时自动放大 1.5 倍
   timeout: 300s
   # 流式请求（问答）超时；0 表示不限制，由上层 context 控制

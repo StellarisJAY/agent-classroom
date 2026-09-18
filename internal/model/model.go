@@ -150,6 +150,31 @@ type ImageClient interface {
 // ImageFactory 根据配置构造 ImageClient 的工厂。
 type ImageFactory func(cfg ProviderConfig) ImageClient
 
+// TTSRequest 一次语音合成请求。
+// Voice 为平台统一定义的音色 ID（见 TTSVoiceCatalog），由各适配器映射到供应商实际参数；
+// Speed<=0 表示使用实现默认语速（1.0）；Format 为空由实现取默认格式。
+type TTSRequest struct {
+	Text   string
+	Voice  string
+	Speed  float64
+	Format string
+}
+
+// TTSResponse 语音合成结果，Audio 为解码后的音频字节。
+type TTSResponse struct {
+	Audio       []byte
+	ContentType string
+}
+
+// TTSClient 语音合成客户端接口。
+type TTSClient interface {
+	// Synthesize 合成一段语音，返回音频字节。
+	Synthesize(ctx context.Context, req TTSRequest) (*TTSResponse, error)
+}
+
+// TTSFactory 根据配置构造 TTSClient 的工厂。
+type TTSFactory func(cfg ProviderConfig) TTSClient
+
 // Registry provider 路由表。命中注册项则用对应工厂，否则回退默认工厂。
 // 默认工厂由上层（bootstrap）注入，避免 model 包反向依赖具体实现（如 llm 包）。
 type Registry struct {
@@ -157,11 +182,17 @@ type Registry struct {
 	defaultLLM   LLMFactory
 	image        map[string]ImageFactory
 	defaultImage ImageFactory
+	tts          map[string]TTSFactory
+	defaultTTS   TTSFactory
 }
 
 // NewRegistry 创建空注册表。
 func NewRegistry() *Registry {
-	return &Registry{llm: make(map[string]LLMFactory), image: make(map[string]ImageFactory)}
+	return &Registry{
+		llm:   make(map[string]LLMFactory),
+		image: make(map[string]ImageFactory),
+		tts:   make(map[string]TTSFactory),
+	}
 }
 
 // RegisterLLM 为指定 provider 注册工厂（未来非 OpenAI 协议厂商的扩展点）。
@@ -202,6 +233,27 @@ func (r *Registry) NewImage(cfg ProviderConfig) ImageClient {
 	}
 	if r.defaultImage != nil {
 		return r.defaultImage(cfg)
+	}
+	return nil
+}
+
+// RegisterTTS 为指定 provider 注册语音合成工厂。
+func (r *Registry) RegisterTTS(provider string, f TTSFactory) {
+	r.tts[provider] = f
+}
+
+// SetDefaultTTSFactory 设置语音合成未命中注册表时的回退工厂。
+func (r *Registry) SetDefaultTTSFactory(f TTSFactory) {
+	r.defaultTTS = f
+}
+
+// NewTTS 按 provider 路由构造语音合成客户端；未命中且无默认工厂时返回 nil。
+func (r *Registry) NewTTS(cfg ProviderConfig) TTSClient {
+	if f, ok := r.tts[cfg.Provider]; ok {
+		return f(cfg)
+	}
+	if r.defaultTTS != nil {
+		return r.defaultTTS(cfg)
 	}
 	return nil
 }

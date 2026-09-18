@@ -21,6 +21,7 @@ import (
 	"github.com/StellarisJAY/agent-classroom/internal/model/extractor"
 	"github.com/StellarisJAY/agent-classroom/internal/model/image"
 	"github.com/StellarisJAY/agent-classroom/internal/model/llm"
+	"github.com/StellarisJAY/agent-classroom/internal/model/tts"
 	"github.com/StellarisJAY/agent-classroom/internal/router"
 	"github.com/StellarisJAY/agent-classroom/internal/storage"
 	"github.com/StellarisJAY/agent-classroom/internal/types"
@@ -96,8 +97,11 @@ func NewApp(cfg *config.Config) (*App, error) {
 	modelRegistry := model.NewRegistry()
 	modelRegistry.SetDefaultLLMFactory(llm.NewOpenAICompatible)
 	modelRegistry.SetDefaultImageFactory(image.NewOpenAICompatible)
+	// 语音合成默认回退 OpenAI 兼容实现；音色 ID 由适配器映射到供应商参数。
+	modelRegistry.SetDefaultTTSFactory(tts.NewOpenAICompatible)
 	// 阿里云百炼走专属多模态协议，单独适配。
 	modelRegistry.RegisterImage(llm.ProviderBailian, image.NewBailian)
+	modelRegistry.RegisterTTS(llm.ProviderBailian, tts.NewBailian)
 
 	var objStorage types.Storage
 	switch cfg.Storage.Type {

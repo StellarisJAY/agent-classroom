@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/StellarisJAY/agent-classroom/internal/config"
+	"github.com/StellarisJAY/agent-classroom/internal/model"
 	"github.com/StellarisJAY/agent-classroom/internal/types"
 	"github.com/StellarisJAY/agent-classroom/internal/util"
 )
@@ -271,6 +272,22 @@ func TestModelConfigResolveByKey(t *testing.T) {
 
 	_, err = svc.ResolveByKey(context.Background(), "missing")
 	require.ErrorIs(t, err, types.ErrModelConfigNotFound)
+}
+
+func TestModelConfigOptionsTTSVoices(t *testing.T) {
+	cipher, _ := util.NewGCMCipher([]byte("0123456789abcdef0123456789abcdef"))
+	svc := NewModelConfigService(&mockModelConfigRepo{}, fakeTM{}, cipher, &config.Config{
+		Model: config.ModelConfig{
+			Options: []config.ModelOptionConfig{
+				{Key: "l1", Kind: types.ModelKindLLM, Provider: "openai", Model: "gpt-4o-mini"},
+				{Key: "t1", Kind: types.ModelKindTTS, Provider: "openai", Model: "gpt-4o-mini-tts"},
+			},
+		},
+	})
+	opts := svc.Options(context.Background())
+	require.Len(t, opts, 2)
+	require.Empty(t, opts[0].Voices, "非 tts 模型不应携带音色清单")
+	require.Equal(t, model.TTSVoiceCatalog, opts[1].Voices, "tts 模型应下发平台内置音色清单")
 }
 
 func TestModelConfigResolveDefaultImageNoFallback(t *testing.T) {

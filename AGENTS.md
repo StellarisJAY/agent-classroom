@@ -57,11 +57,12 @@ agent-classroom/
 │   │       ├── transaction.go      # ctx 携带事务 + base 嵌入统一取连接
 │   │       └── <domain>.go         # 各领域 repo 实现 + 集成测试
 │   ├── model/                      # 大模型适配层（不依赖 types/服务层，仅标准库）
-│   │   ├── model.go                # 通用类型（ChatMessage、ProviderConfig）+ Registry
+│   │   ├── model.go                # 通用类型（ChatMessage、ProviderConfig、TTSClient）+ Registry
+│   │   ├── tts_voice.go            # 平台内置跨供应商音色清单（TTSVoiceCatalog）
 │   │   ├── llm/                    # LLM 适配器（OpenAI 兼容实现）
 │   │   ├── image/                  # 图像生成适配器（openai 兼容 / bailian 专属协议）
 │   │   ├── extractor/              # 参考文档提取器（local / mineru（官方 Go SDK，无 token 回退 Flash）/ chain 兜底链）
-│   │   └── tts/                    # 预留：TTS 适配器（暂无实现）
+│   │   └── tts/                    # TTS 适配器（OpenAI 兼容 /audio/speech、百炼 Qwen-TTS，内置音色映射）
 │   ├── storage/                    # 对象存储实现（local / minio），实现 types.Storage
 │   ├── handler/                    # HTTP 层：解析请求 → 调 service → 统一响应
 │   │   ├── response.go             # 统一响应封装 + bind/校验 helper
@@ -196,7 +197,8 @@ web/
 - LLM 提示词一律放 `prompts/` 子目录（现存 `internal/application/service/prompts/`、`internal/agent/prompts/`），经 `go:embed` 引入（各自包内 `prompt.go`），不硬编码在 Go 代码里。
 - 互动演示环节以 `templates/*.html` 骨架拼接生成，产出页面启用 CSP 禁止网络访问，写入 `section.content`。
 - 参考文档提取走 `model/extractor` 链：按配置选 local / mineru / chain（外部优先、本地兜底）；minerU 官方 API 用官方 Go SDK（sdk/go），无 token 自动回退免登录 Flash 提取。
-- 模型由平台在配置文件 `model.options` 统一提供多个全局可选模型（创建课程时选择，落库 `course.model_key` / `image_model_key`）；LLM 未选择时使用清单中 `default: true` 的项，配图模型通常不设默认（未选择则不生成配图）。不开放用户自配模型，`/model-configs` 接口与 `user_model_config` 表暂时屏蔽/停用（表与数据保留）。
+- 模型由平台在配置文件 `model.options` 统一提供多个全局可选模型（`kind`：llm / image / tts，创建课程时选择，落库 `course.model_key` / `image_model_key` 等）；LLM 未选择时使用清单中 `default: true` 的项，配图与语音模型通常不设默认（未选择则不生成）。不开放用户自配模型，`/model-configs` 接口与 `user_model_config` 表暂时屏蔽/停用（表与数据保留）。
+- TTS 音色为平台内置跨供应商清单（`model.TTSVoiceCatalog`），配置与建课只选择音色 ID；各 TTS 适配器负责把音色 ID 映射为供应商实际参数（OpenAI 未命中原样透传，百炼未命中回退默认音色，因为百炼对未知音色直接报错）。
 
 ## 测试约定
 

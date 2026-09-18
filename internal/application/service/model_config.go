@@ -229,13 +229,19 @@ func (s *ModelConfigService) Options(_ context.Context) []types.ModelOptionInfo 
 		if label == "" {
 			label = o.Model
 		}
+		kind := normalizeKind(o.Kind)
+		var voices []model.TTSVoiceTone
+		if kind == types.ModelKindTTS {
+			voices = model.TTSVoiceCatalog
+		}
 		out = append(out, types.ModelOptionInfo{
 			Key:       o.Key,
-			Kind:      normalizeKind(o.Kind),
+			Kind:      kind,
 			Label:     label,
 			IsDefault: o.Default,
 			Provider:  o.Provider,
 			Model:     o.Model,
+			Voices:    voices,
 		})
 	}
 	return out
