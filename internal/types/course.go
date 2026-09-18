@@ -58,12 +58,12 @@ type Course struct {
 	Prompt   string `gorm:"not null" json:"prompt"`
 	Status   string `gorm:"type:course_status;not null;default:draft" json:"status"`
 	IsPublic bool   `gorm:"not null;default:false" json:"is_public"`
-	// ModelConfigID 该课程使用哪份 LLM 模型配置；为空则大纲生成时回退默认配置。
-	ModelConfigID *ID `gorm:"type:uuid" json:"model_config_id"`
+	// ModelKey 该课程选用的平台全局模型 key（配置 model.options[].key）；为空使用 default 标记项。
+	ModelKey string `gorm:"type:text" json:"model_key"`
 	// GenerateImages 是否生成幻灯片配图（false 时 slide 阶段不产图）。
 	GenerateImages bool `gorm:"not null;default:false" json:"generate_images"`
-	// ImageModelConfigID 配图使用的 image 用途模型配置；为空则跟随用户默认 image 配置。
-	ImageModelConfigID *ID `gorm:"type:uuid" json:"image_model_config_id"`
+	// ImageModelKey 配图选用的平台全局 image 模型 key；配图模型无兜底，为空则不生成配图。
+	ImageModelKey string `gorm:"type:text" json:"image_model_key"`
 	// Thinking 生成所用模型的思考限制：off / default / max。
 	Thinking string `gorm:"not null;default:default" json:"thinking"`
 	// OutlineCount 大纲环节数量上限（用户可调）；为空回退默认。
@@ -150,12 +150,12 @@ type CreateCourseReq struct {
 	Prompt string
 	// Files 上传的参考文档（早期仅 .txt/.md，文本提取后不落库）
 	Files []UploadedFile
-	// ModelConfigID 选择的用户 LLM 模型配置；为空则生成时用默认配置。
-	ModelConfigID *ID
+	// ModelKey 选用的平台全局 LLM 模型 key（model.options[].key）；为空则使用 default 标记项。
+	ModelKey string
 	// GenerateImages 是否生成幻灯片配图；false 时 slide 阶段不产图。
 	GenerateImages bool
-	// ImageModelConfigID 配图模型配置（kind=image）；为空且 GenerateImages 为真时跟随用户默认 image 配置。
-	ImageModelConfigID *ID
+	// ImageModelKey 配图选用的平台全局 image 模型 key；配图模型无兜底，为空则不生成配图。
+	ImageModelKey string
 	// Thinking 模型思考限制：off / default / max。
 	Thinking string
 	// OutlineCount 大纲环节数量上限；0 或缺省由 service 回退默认（5）。
@@ -185,8 +185,8 @@ var (
 	ErrCourseNotFound = NewError(CodeNotFound, "课程不存在")
 	// ErrPromptRequired prompt 不能为空
 	ErrPromptRequired = NewError(CodeBadRequest, "请输入课程内容要求")
-	// ErrNoModelConfig 无可用模型配置（未设默认且服务端兜底缺失）
-	ErrNoModelConfig = NewError(CodeBadRequest, "未配置可用模型，请先在设置中添加模型配置")
+	// ErrNoModelConfig 无可用模型（配置文件未提供全局模型或密钥缺失）
+	ErrNoModelConfig = NewError(CodeBadRequest, "平台未配置可用模型，请联系管理员")
 	// ErrUnsupportedFile 参考文档格式不支持（txt/md/pdf/docx）
 	ErrUnsupportedFile = NewError(CodeBadRequest, "参考文档仅支持 markdown/pdf/word 格式")
 	// ErrFileTooLarge 文档超过大小上限

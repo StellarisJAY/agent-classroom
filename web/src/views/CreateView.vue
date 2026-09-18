@@ -6,11 +6,10 @@ import type { SelectOption, UploadFileInfo } from 'naive-ui'
 import { RocketOutline, AttachOutline } from '@vicons/ionicons5'
 
 import { OutlineCount, Thinking, type ThinkingValue, createCourse } from '@/api/course'
-import { useModelConfigStore } from '@/stores/model-config'
+import { listModelOptions, type ModelOption } from '@/api/models'
 
 const router = useRouter()
 const message = useMessage()
-const modelConfigStore = useModelConfigStore()
 
 const prompt = ref('')
 const files = ref<UploadFileInfo[]>([])
@@ -19,25 +18,34 @@ const submitting = ref(false)
 /** 大纲环节数量上限 */
 const outlineCount = ref(OutlineCount.Default)
 
-/** 选中的模型配置；空串表示使用默认模型（不随课程绑定专属配置） */
-const modelConfigId = ref('')
+/** 平台全局可选模型清单（来自配置文件） */
+const modelOptionsRaw = ref<ModelOption[]>([])
+
+/** 选中的 LLM 模型 key；空串表示使用清单中 default 标记的模型 */
+const modelKey = ref('')
 const thinking = ref<ThinkingValue>(Thinking.Default)
 
 /** 是否生成幻灯片配图；初始关闭 */
 const generateImages = ref(false)
-/** 选中的配图模型配置；空串表示跟随用户默认 image 配置 */
-const imageModelConfigId = ref('')
+/** 选中的配图模型 key；配图模型无兜底，空串表示不生成配图 */
+const imageModelKey = ref('')
 
 const ALLOWED_EXTS = ['.txt', '.md', '.markdown', '.pdf', '.docx']
 
+/** 兜底 LLM 选项：优先 default 标记，其次第一个 llm 选项 */
+const defaultLLMOption = computed(
+  () =>
+    modelOptionsRaw.value.find((o) => o.kind === 'llm' && o.is_default) ??
+    modelOptionsRaw.value.find((o) => o.kind === 'llm') ??
+    null,
+)
+
 const modelOptions = computed<SelectOption[]>(() => {
-  const label = modelConfigStore.defaultLLMConfig
-    ? `默认 · ${modelConfigStore.defaultLLMConfig.model}`
-    : '服务端默认模型'
-  const opts: SelectOption[] = [{ label, value: '' }]
-  for (const c of modelConfigStore.configs) {
-    if (c.kind !== 'llm') continue
-    opts.push({ label: `${c.model}（${c.provider}）`, value: c.id })
+  const opts: SelectOption[] = []
+  for (const o of modelOptionsRaw.value) {
+    if (o.kind !== 'llm') continue
+    const suffix = o.is_default ? ' · 默认' : ''
+    opts.push({ label: `${o.label}${suffix}（${o.provider}）`, value: o.key })
   }
   return opts
 })
@@ -48,21 +56,30 @@ const thinkingOptions: SelectOption[] = [
   { label: '最大化思考', value: Thinking.Max },
 ]
 
-/** 配图模型下拉：默认（跟随用户默认 image 配置）+ 具体 image 配置 */
+/** 配图模型下拉：仅列出配置文件中的 image 模型（无兜底，开启配图须显式选择） */
 const imageOptions = computed<SelectOption[]>(() => {
-  const label = modelConfigStore.defaultConfig?.kind === 'image'
-    ? `默认 · ${modelConfigStore.defaultConfig.model}`
-    : '默认模型'
-  const opts: SelectOption[] = [{ label, value: '' }]
-  for (const c of modelConfigStore.configs) {
-    if (c.kind !== 'image') continue
-    opts.push({ label: `${c.model}（${c.provider}）`, value: c.id })
+  const opts: SelectOption[] = []
+  for (const o of modelOptionsRaw.value) {
+    if (o.kind !== 'image') continue
+    const suffix = o.is_default ? ' · 默认' : ''
+    opts.push({ label: `${o.label}${suffix}（${o.provider}）`, value: o.key })
   }
   return opts
 })
 
+const hasImageOptions = computed(() => imageOptions.value.length > 0)
+
 function handleImageModelChange(value: string | number | null) {
-  imageModelConfigId.value = value ? String(value) : ''
+  imageModelKey.value = value ? String(value) : ''
+}
+
+/** 开启配图时自动选中第一个 image 模型，避免开启后无模型可用 */
+function handleGenerateImagesChange(value: boolean) {
+  generateImages.value = value
+  const first = imageOptions.value[0]
+  if (value && !imageModelKey.value && first) {
+    imageModelKey.value = String(first.value)
+  }
 }
 
 function isAllowed(name: string): boolean {
@@ -71,7 +88,7 @@ function isAllowed(name: string): boolean {
 }
 
 function handleModelChange(value: string | number | null) {
-  modelConfigId.value = value ? String(value) : ''
+  modelKey.value = value ? String(value) : ''
 }
 
 function handleFileChange({ file, fileList }: { file: UploadFileInfo; fileList: UploadFileInfo[] }) {
@@ -105,12 +122,12 @@ async function handleSubmit() {
   submitting.value = true
   try {
     const course = await createCourse(prompt.value.trim(), rawFiles, {
-      modelConfigId: modelConfigId.value || undefined,
+      modelKey: modelKey.value || undefined,
       thinking: thinking.value,
       outlineCount: outlineCount.value,
       generateImages: generateImages.value,
-      imageModelConfigId:
-        generateImages.value && imageModelConfigId.value ? imageModelConfigId.value : undefined,
+      imageModelKey:
+        generateImages.value && imageModelKey.value ? imageModelKey.value : undefined,
     })
     message.success('课程已创建，正在生成大纲…')
     router.push(`/preview/${course.id}`)
@@ -121,8 +138,14 @@ async function handleSubmit() {
   }
 }
 
-onMounted(() => {
-  modelConfigStore.ensureLoaded()
+onMounted(async () => {
+  try {
+    modelOptionsRaw.value = await listModelOptions()
+    const def = defaultLLMOption.value
+    if (!modelKey.value && def) modelKey.value = def.key
+  } catch {
+    modelOptionsRaw.value = []
+  }
 })
 </script>
 
@@ -189,20 +212,31 @@ onMounted(() => {
       <div class="create-view__images">
         <div class="create-view__images-head">
           <span class="create-view__images-label">幻灯片配图</span>
-          <n-switch v-model:value="generateImages" :disabled="submitting" size="small" />
+          <n-switch
+            :value="generateImages"
+            :disabled="submitting || !hasImageOptions"
+            size="small"
+            @update:value="handleGenerateImagesChange"
+          />
         </div>
         <div class="create-view__images-body">
           <n-select
-            v-model:value="imageModelConfigId"
+            v-model:value="imageModelKey"
             :options="imageOptions"
             size="small"
             class="create-view__images-select"
-            :disabled="submitting || !generateImages"
+            :disabled="submitting || !generateImages || !hasImageOptions"
             placeholder="配图模型"
             @update:value="handleImageModelChange"
           />
           <p class="create-view__images-hint">
-            {{ generateImages ? '每个 slide 将由配图模型生成插图' : '关闭后不生成配图，仅纯文本内容' }}
+            {{
+              !hasImageOptions
+                ? '平台未配置配图模型'
+                : generateImages
+                  ? '每个 slide 将由配图模型生成插图'
+                  : '关闭后不生成配图，仅纯文本内容'
+            }}
           </p>
         </div>
       </div>
@@ -210,7 +244,7 @@ onMounted(() => {
       <div class="create-view__toolbar">
         <div class="create-view__tools">
           <n-select
-            :value="modelConfigId"
+            :value="modelKey"
             :options="modelOptions"
             size="small"
             class="create-view__tool create-view__tool--model"
@@ -263,8 +297,8 @@ onMounted(() => {
         </n-button>
       </div>
 
-      <p v-if="!modelConfigStore.hasLLMConfig" class="create-view__hint">
-        尚未添加 LLM 模型配置，将使用服务端默认模型
+      <p v-if="modelOptionsRaw.length === 0" class="create-view__hint">
+        平台暂未配置可选模型，暂时无法生成课程，请联系管理员
       </p>
     </div>
   </div>

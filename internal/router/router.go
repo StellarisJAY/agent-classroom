@@ -16,7 +16,7 @@ import (
 )
 
 // Register 挂载全局中间件并注册路由分组。
-func Register(e *gin.Engine, cfg *config.Config, logger *slog.Logger, auth *handler.AuthHandler, modelConfig *handler.ModelConfigHandler, course *handler.CourseHandler, section *handler.SectionHandler, discussion *handler.DiscussionHandler, storage types.Storage) {
+func Register(e *gin.Engine, cfg *config.Config, logger *slog.Logger, auth *handler.AuthHandler, model *handler.ModelHandler, course *handler.CourseHandler, section *handler.SectionHandler, discussion *handler.DiscussionHandler, storage types.Storage) {
 	// 全局中间件
 	e.Use(
 		middleware.Recovery(logger),
@@ -34,11 +34,11 @@ func Register(e *gin.Engine, cfg *config.Config, logger *slog.Logger, auth *hand
 
 	// API 根分组
 	api := e.Group("/api")
-	registerAPI(api, cfg, auth, modelConfig, course, section, discussion)
+	registerAPI(api, cfg, auth, model, course, section, discussion)
 }
 
 // registerAPI 集中注册所有业务路由分组。
-func registerAPI(api *gin.RouterGroup, cfg *config.Config, auth *handler.AuthHandler, modelConfig *handler.ModelConfigHandler, course *handler.CourseHandler, section *handler.SectionHandler, discussion *handler.DiscussionHandler) {
+func registerAPI(api *gin.RouterGroup, cfg *config.Config, auth *handler.AuthHandler, model *handler.ModelHandler, course *handler.CourseHandler, section *handler.SectionHandler, discussion *handler.DiscussionHandler) {
 	authGroup := api.Group("/auth")
 	{
 		authGroup.POST("/register", auth.Register)
@@ -46,13 +46,21 @@ func registerAPI(api *gin.RouterGroup, cfg *config.Config, auth *handler.AuthHan
 		authGroup.GET("/me", middleware.Auth(cfg.JWT.Secret), auth.Me)
 	}
 
-	modelConfigGroup := api.Group("/model-configs", middleware.Auth(cfg.JWT.Secret))
+	// 用户模型配置接口暂时屏蔽：平台统一在配置文件提供全局模型，用户不自行配置。
+	// 如需恢复，取消下方注释并重新装配 handler.ModelConfigHandler 即可。
+	// modelConfigGroup := api.Group("/model-configs", middleware.Auth(cfg.JWT.Secret))
+	// {
+	// 	modelConfigGroup.GET("", modelConfig.List)
+	// 	modelConfigGroup.POST("", modelConfig.Create)
+	// 	modelConfigGroup.PUT("/:id", modelConfig.Update)
+	// 	modelConfigGroup.DELETE("/:id", modelConfig.Delete)
+	// 	modelConfigGroup.PUT("/:id/default", modelConfig.SetDefault)
+	// }
+
+	// 平台全局可选模型清单（创建课程下拉）。
+	modelGroup := api.Group("/models", middleware.Auth(cfg.JWT.Secret))
 	{
-		modelConfigGroup.GET("", modelConfig.List)
-		modelConfigGroup.POST("", modelConfig.Create)
-		modelConfigGroup.PUT("/:id", modelConfig.Update)
-		modelConfigGroup.DELETE("/:id", modelConfig.Delete)
-		modelConfigGroup.PUT("/:id/default", modelConfig.SetDefault)
+		modelGroup.GET("", model.List)
 	}
 
 	courseGroup := api.Group("/courses", middleware.Auth(cfg.JWT.Secret))

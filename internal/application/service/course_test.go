@@ -195,6 +195,12 @@ func (m *mockModelCfgSvc) ResolveDefaultByKind(context.Context, types.ID, string
 func (m *mockModelCfgSvc) ResolveByID(context.Context, types.ID, types.ID) (model.ProviderConfig, error) {
 	return model.ProviderConfig{}, types.ErrNotFound
 }
+func (m *mockModelCfgSvc) Options(context.Context) []types.ModelOptionInfo {
+	return nil
+}
+func (m *mockModelCfgSvc) ResolveByKey(context.Context, string) (model.ProviderConfig, error) {
+	return model.ProviderConfig{}, types.ErrNotFound
+}
 func (m *mockModelCfgSvc) List(context.Context, types.ID) ([]types.ModelConfigInfo, error) {
 	return nil, nil
 }

@@ -126,6 +126,8 @@ func migrateCourseSchema(db *gorm.DB) error {
 			status          course_status NOT NULL DEFAULT 'draft',
 			is_public       boolean NOT NULL DEFAULT false,
 			model_config_id uuid REFERENCES user_model_config(id) ON DELETE SET NULL,
+			model_key       text NOT NULL DEFAULT '',
+			image_model_key text NOT NULL DEFAULT '',
 			thinking        text NOT NULL DEFAULT 'default',
 			outline_count   integer NOT NULL DEFAULT 5,
 			create_by       uuid REFERENCES users(id) ON DELETE SET NULL,
@@ -200,6 +202,13 @@ func migrateCourseSchema(db *gorm.DB) error {
 	}
 	if err := db.Exec(`ALTER TABLE course ADD COLUMN IF NOT EXISTS image_model_config_id uuid REFERENCES user_model_config(id) ON DELETE SET NULL`).Error; err != nil {
 		return fmt.Errorf("migrate course add image_model_config_id: %w", err)
+	}
+	// 平台全局模型清单：课程持久化所选 option key（旧 model_config_id 列保留但不再使用）。
+	if err := db.Exec(`ALTER TABLE course ADD COLUMN IF NOT EXISTS model_key text NOT NULL DEFAULT ''`).Error; err != nil {
+		return fmt.Errorf("migrate course add model_key: %w", err)
+	}
+	if err := db.Exec(`ALTER TABLE course ADD COLUMN IF NOT EXISTS image_model_key text NOT NULL DEFAULT ''`).Error; err != nil {
+		return fmt.Errorf("migrate course add image_model_key: %w", err)
 	}
 	// 默认模型不变量：同一 (user, kind) 至多一个默认。先清理历史重复默认，再建部分唯一索引。
 	if err := db.Exec(`UPDATE user_model_config u SET is_default = false

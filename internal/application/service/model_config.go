@@ -201,37 +201,66 @@ func (s *ModelConfigService) toInfo(_ context.Context, m *types.UserModelConfig)
 	}, nil
 }
 
-// ResolveDefault 解析用户默认 LLM 配置为可用 ProviderConfig；无默认时回退服务端兜底配置。
+// ResolveDefault 解析平台默认 LLM 模型为可用 ProviderConfig；无默认项时返回 ErrNoModelConfig。
 func (s *ModelConfigService) ResolveDefault(ctx context.Context, userID types.ID) (model.ProviderConfig, error) {
 	return s.ResolveDefaultByKind(ctx, userID, types.ModelKindLLM)
 }
 
-// ResolveDefaultByKind 解析用户指定用途的默认配置为可用 ProviderConfig；无默认时回退服务端兜底配置。
-func (s *ModelConfigService) ResolveDefaultByKind(ctx context.Context, userID types.ID, kind string) (model.ProviderConfig, error) {
-	m, err := s.repo.GetDefaultByKind(ctx, userID, normalizeKind(kind))
-	if err == nil {
-		return s.resolveConfig(m)
+// ResolveDefaultByKind 解析指定用途的兜底模型（配置 model.options 中该 kind 的 default: true 项）。
+// 平台不向用户开放模型配置，故始终只读配置文件，不查用户库。
+// 无匹配默认项时返回 ErrNoModelConfig（image 通常不设默认，未显式选择则不生成配图）。
+func (s *ModelConfigService) ResolveDefaultByKind(_ context.Context, _ types.ID, kind string) (model.ProviderConfig, error) {
+	for _, o := range s.cfg.Model.Options {
+		if normalizeKind(o.Kind) == normalizeKind(kind) && o.Default {
+			return s.toProviderConfig(o), nil
+		}
 	}
-	if !errors.Is(err, types.ErrNotFound) {
-		return model.ProviderConfig{}, err
-	}
-	d := s.fallbackConfig(kind)
-	return model.ProviderConfig{
-		Provider:      d.Provider,
-		Model:         d.Model,
-		BaseURL:       d.BaseURL,
-		APIKey:        d.APIKey,
-		Timeout:       s.cfg.Model.Timeout,
-		StreamTimeout: s.cfg.Model.StreamTimeout,
-	}, nil
+	return model.ProviderConfig{}, types.ErrNoModelConfig
 }
 
-// fallbackConfig 返回指定用途的服务端兜底模型配置；image 用 image 段，其余用 default 段。
-func (s *ModelConfigService) fallbackConfig(kind string) config.ModelDefaultConfig {
-	if normalizeKind(kind) == types.ModelKindImage {
-		return s.cfg.Model.Image
+// Options 返回配置文件中的平台全局可选模型清单（不含密钥）。
+func (s *ModelConfigService) Options(_ context.Context) []types.ModelOptionInfo {
+	out := make([]types.ModelOptionInfo, 0, len(s.cfg.Model.Options))
+	for _, o := range s.cfg.Model.Options {
+		if o.Key == "" {
+			continue
+		}
+		label := o.Label
+		if label == "" {
+			label = o.Model
+		}
+		out = append(out, types.ModelOptionInfo{
+			Key:       o.Key,
+			Kind:      normalizeKind(o.Kind),
+			Label:     label,
+			IsDefault: o.Default,
+			Provider:  o.Provider,
+			Model:     o.Model,
+		})
 	}
-	return s.cfg.Model.Default
+	return out
+}
+
+// ResolveByKey 按配置文件中的 option key 解析为 ProviderConfig；未找到返回 ErrModelConfigNotFound。
+func (s *ModelConfigService) ResolveByKey(_ context.Context, key string) (model.ProviderConfig, error) {
+	for _, o := range s.cfg.Model.Options {
+		if o.Key == key {
+			return s.toProviderConfig(o), nil
+		}
+	}
+	return model.ProviderConfig{}, types.ErrModelConfigNotFound
+}
+
+// toProviderConfig 将配置项组装为可用的 ProviderConfig（补全全局超时设置）。
+func (s *ModelConfigService) toProviderConfig(o config.ModelOptionConfig) model.ProviderConfig {
+	return model.ProviderConfig{
+		Provider:      o.Provider,
+		Model:         o.Model,
+		BaseURL:       o.BaseURL,
+		APIKey:        o.APIKey,
+		Timeout:       s.cfg.Model.Timeout,
+		StreamTimeout: s.cfg.Model.StreamTimeout,
+	}
 }
 
 // ResolveByID 解析指定配置为 ProviderConfig；未找到返回 ErrModelConfigNotFound。

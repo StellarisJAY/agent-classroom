@@ -185,10 +185,10 @@ func (s *CourseService) generateOutline(ctx context.Context, userID, courseID ty
 		return nil, gerr
 	}
 
-	// 获取模型API
+	// 获取模型API：课程选了全局模型则用选中的，否则用配置文件中 default 标记的模型。
 	var cfg model.ProviderConfig
-	if course.ModelConfigID != nil && *course.ModelConfigID != types.NilID {
-		cfg, err = s.modelCfgSvc.ResolveByID(ctx, userID, *course.ModelConfigID)
+	if course.ModelKey != "" {
+		cfg, err = s.modelCfgSvc.ResolveByKey(ctx, course.ModelKey)
 	} else {
 		cfg, err = s.modelCfgSvc.ResolveDefault(ctx, userID)
 	}

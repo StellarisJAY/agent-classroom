@@ -544,8 +544,8 @@ func (s *SectionService) runRetryGeneration(userID types.ID, courseID, sectionID
 func (s *SectionService) buildGenerationContext(ctx context.Context, userID types.ID, course *types.Course) (types.GenerationContext, error) {
 	var cfg model.ProviderConfig
 	var err error
-	if course.ModelConfigID != nil && *course.ModelConfigID != types.NilID {
-		cfg, err = s.modelCfgSvc.ResolveByID(ctx, userID, *course.ModelConfigID)
+	if course.ModelKey != "" {
+		cfg, err = s.modelCfgSvc.ResolveByKey(ctx, course.ModelKey)
 	} else {
 		cfg, err = s.modelCfgSvc.ResolveDefault(ctx, userID)
 	}
@@ -560,17 +560,11 @@ func (s *SectionService) buildGenerationContext(ctx context.Context, userID type
 		return types.GenerationContext{}, types.ErrNoModelConfig
 	}
 
-	// 文生图为可选能力：课程关闭配图时不产图；开启时优先用绑定配置，否则跟随用户默认 image 配置。
+	// 文生图为可选能力：课程关闭配图或未显式选择 image 模型时不产图（image 无兜底）。
 	var imageClient model.ImageClient
-	if course.GenerateImages {
-		var imgCfg model.ProviderConfig
-		var ierr error
-		if course.ImageModelConfigID != nil && *course.ImageModelConfigID != types.NilID {
-			imgCfg, ierr = s.modelCfgSvc.ResolveByID(ctx, userID, *course.ImageModelConfigID)
-		} else {
-			imgCfg, ierr = s.modelCfgSvc.ResolveDefaultByKind(ctx, userID, types.ModelKindImage)
-		}
-		if ierr == nil && imgCfg.Model != "" && imgCfg.APIKey != "" {
+	if course.GenerateImages && course.ImageModelKey != "" {
+		if imgCfg, ierr := s.modelCfgSvc.ResolveByKey(ctx, course.ImageModelKey); ierr == nil &&
+			imgCfg.Model != "" && imgCfg.APIKey != "" {
 			imageClient = s.registry.NewImage(imgCfg)
 		}
 	}

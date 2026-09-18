@@ -48,6 +48,16 @@ type ModelConfigInfo struct {
 	IsDefault    bool   `json:"is_default"`
 }
 
+// ModelOptionInfo 平台全局可选模型（配置文件 model.options），不下发密钥。
+type ModelOptionInfo struct {
+	Key       string `json:"key"`
+	Kind      string `json:"kind"`
+	Label     string `json:"label"`
+	IsDefault bool   `json:"is_default"`
+	Provider  string `json:"provider"`
+	Model     string `json:"model"`
+}
+
 // CreateModelConfigReq 新增模型配置请求
 type CreateModelConfigReq struct {
 	Kind      string `json:"kind" binding:"omitempty,oneof=llm image"`
@@ -118,4 +128,8 @@ type ModelConfigService interface {
 	ResolveDefaultByKind(ctx context.Context, userID ID, kind string) (model.ProviderConfig, error)
 	// ResolveByID 解析指定配置为 ProviderConfig；未找到返回 ErrModelConfigNotFound。
 	ResolveByID(ctx context.Context, userID, configID ID) (model.ProviderConfig, error)
+	// Options 返回配置文件中的平台全局可选模型清单（不含密钥）。
+	Options(ctx context.Context) []ModelOptionInfo
+	// ResolveByKey 按配置文件中的 option key 解析为 ProviderConfig；未找到返回 ErrModelConfigNotFound。
+	ResolveByKey(ctx context.Context, key string) (model.ProviderConfig, error)
 }

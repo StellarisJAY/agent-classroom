@@ -66,6 +66,7 @@ agent-classroom/
 │   ├── handler/                    # HTTP 层：解析请求 → 调 service → 统一响应
 │   │   ├── response.go             # 统一响应封装 + bind/校验 helper
 │   │   ├── sse.go                  # SSE 写出器（事件帧 + Flush + 心跳保活，讨论模式用）
+│   │   ├── model.go               # 平台全局可选模型清单（GET /api/models，来自配置 model.options）
 │   │   └── discussion.go           # 讨论模式：提问 SSE 流 + 问答历史
 │   ├── router/
 │   │   └── router.go               # 路由分组注册 + 中间件挂载 + /uploads 存储代理
@@ -99,7 +100,8 @@ web/
     ├── router/index.ts             # 路由：/login、/（课程列表）、/create、
     │                               # /course/:id/learn、/preview/:id
     ├── api/                        # HTTP 层：http.ts（axios 封装）、error.ts、token.ts
-    │   ├── auth.ts / model-config.ts / course.ts
+    │   ├── auth.ts / models.ts / course.ts   # models.ts：平台全局可选模型清单（GET /models）
+    │   ├── model-config.ts         # 用户模型配置（入口已屏蔽，保留待恢复）
     │   ├── learn.ts                # 学习页接口（demo 未就绪部分由 learn.mock.ts 兜底；问答历史走 api/discussion.ts）
     │   ├── discussion.ts           # 讨论模式 SSE 单流接口 + mapAction 协议转换 + 问答历史
     │   ├── sse.ts                  # 通用 SSE 消费器（fetch + ReadableStream 帧解析）
@@ -194,6 +196,7 @@ web/
 - LLM 提示词一律放 `prompts/` 子目录（现存 `internal/application/service/prompts/`、`internal/agent/prompts/`），经 `go:embed` 引入（各自包内 `prompt.go`），不硬编码在 Go 代码里。
 - 互动演示环节以 `templates/*.html` 骨架拼接生成，产出页面启用 CSP 禁止网络访问，写入 `section.content`。
 - 参考文档提取走 `model/extractor` 链：按配置选 local / mineru / chain（外部优先、本地兜底）；minerU 官方 API 用官方 Go SDK（sdk/go），无 token 自动回退免登录 Flash 提取。
+- 模型由平台在配置文件 `model.options` 统一提供多个全局可选模型（创建课程时选择，落库 `course.model_key` / `image_model_key`）；LLM 未选择时使用清单中 `default: true` 的项，配图模型通常不设默认（未选择则不生成配图）。不开放用户自配模型，`/model-configs` 接口与 `user_model_config` 表暂时屏蔽/停用（表与数据保留）。
 
 ## 测试约定
 

@@ -12,7 +12,6 @@ import {
   NTabs,
 } from 'naive-ui'
 
-import ModelConfigPanel from '@/components/app/ModelConfigPanel.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore, type ThemeMode } from '@/stores/theme'
 
@@ -63,9 +62,7 @@ function handleThemeChange(mode: ThemeMode) {
           <p class="settings-profile__hint">用户名 / 邮箱修改与密码重置功能将在接口就绪后开放。</p>
         </div>
       </n-tab-pane>
-      <n-tab-pane name="model" tab="模型配置">
-        <model-config-panel />
-      </n-tab-pane>
+      <!-- 模型配置入口暂时屏蔽：平台统一在服务端配置文件提供全局模型 -->
       <n-tab-pane name="appearance" tab="外观">
         <div class="settings-appearance">
           <n-radio-group :value="themeStore.mode" @update:value="handleThemeChange">

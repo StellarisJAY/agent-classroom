@@ -81,16 +81,35 @@ type CryptoConfig struct {
 
 // ModelConfig 模型相关配置。
 type ModelConfig struct {
-	// Default 服务端统一兜底 LLM 模型，用户无专属配置时使用。
-	Default ModelDefaultConfig `mapstructure:"default"`
-	// Image 服务端兜底文生图模型，用户无 image 用途配置时使用。
-	Image ModelDefaultConfig `mapstructure:"image"`
+	// Options 平台全局可选模型清单，供创建课程时选择（用户不自行配置模型）。
+	// 清单中 default: true 的项作为该用途的兜底模型（未选择课程模型时使用），每个 kind 至多一个。
+	Options []ModelOptionConfig `mapstructure:"options"`
 	// Timeout 非流式请求（大纲 / 环节内容生成 / 文生图）超时；思考模式 max 时自动放大 1.5 倍。
 	Timeout time.Duration `mapstructure:"timeout"`
 	// StreamTimeout 流式请求（问答）超时；0 表示不限制，由上层 context 控制。
 	StreamTimeout time.Duration `mapstructure:"stream_timeout"`
 	// Retry 生成类调用（大纲 / 环节内容 / 文生图）失败重试策略。
 	Retry RetryConfig `mapstructure:"retry"`
+}
+
+// ModelOptionConfig 平台全局可选模型项。key 为唯一标识，随课程持久化以复用。
+type ModelOptionConfig struct {
+	// Key 唯一标识（前端选择与 course.model_key 持久化用）
+	Key string `mapstructure:"key"`
+	// Kind 用途：llm | image
+	Kind string `mapstructure:"kind"`
+	// Label 展示名；为空时回退 model
+	Label string `mapstructure:"label"`
+	// Default 是否为该用途的兜底模型（未选择课程模型时使用）；每个 kind 至多一个
+	Default bool `mapstructure:"default"`
+	// Provider 供应商标识
+	Provider string `mapstructure:"provider"`
+	// Model 模型名
+	Model string `mapstructure:"model"`
+	// BaseURL API 地址
+	BaseURL string `mapstructure:"base_url"`
+	// APIKey 访问密钥
+	APIKey string `mapstructure:"api_key"`
 }
 
 // RetryConfig 生成调用失败重试配置（见 types.RetryPolicy）。
@@ -110,14 +129,6 @@ func (c RetryConfig) Policy() types.RetryPolicy {
 		BaseBackoff: c.BaseBackoff,
 		MaxBackoff:  c.MaxBackoff,
 	}
-}
-
-// ModelDefaultConfig 兜底模型配置。
-type ModelDefaultConfig struct {
-	Provider string `mapstructure:"provider"`
-	Model    string `mapstructure:"model"`
-	BaseURL  string `mapstructure:"base_url"`
-	APIKey   string `mapstructure:"api_key"`
 }
 
 type ServerConfig struct {
@@ -192,16 +203,6 @@ func Load() (*Config, error) {
 	v.SetDefault("cors.max_age", 86400)
 
 	v.SetDefault("crypto.encryption_key", "change-me-to-a-32-byte-encryption-key")
-
-	v.SetDefault("model.default.provider", "openai")
-	v.SetDefault("model.default.model", "gpt-4o-mini")
-	v.SetDefault("model.default.base_url", "https://api.openai.com/v1")
-	v.SetDefault("model.default.api_key", "")
-
-	v.SetDefault("model.image.provider", "openai")
-	v.SetDefault("model.image.model", "gpt-image-1")
-	v.SetDefault("model.image.base_url", "https://api.openai.com/v1")
-	v.SetDefault("model.image.api_key", "")
 
 	v.SetDefault("model.timeout", 300*time.Second)
 	v.SetDefault("model.stream_timeout", 0*time.Second)

@@ -162,13 +162,14 @@ export const OutlineCount = {
 
 /** 创建课程的模型/思考/大纲环节数/配图选项 */
 export interface CourseGenOptions {
-  modelConfigId?: string
+  /** 平台全局 LLM 模型 key（/models 返回）；为空用清单中 default 标记的模型 */
+  modelKey?: string
   thinking?: ThinkingValue
   outlineCount?: number
   /** 是否生成幻灯片配图；为 false 时不传 generate_images */
   generateImages?: boolean
-  /** 配图模型配置（kind=image）；为空且开启配图时跟随用户默认 image 配置 */
-  imageModelConfigId?: string
+  /** 平台全局配图模型 key（kind=image）；配图模型无兜底，为空则不生成配图 */
+  imageModelKey?: string
 }
 
 /** 创建草稿课程（multipart：prompt + files[]，参考文档仅 txt/md） */
@@ -180,12 +181,12 @@ export function createCourse(
   const form = new FormData()
   form.append('prompt', prompt)
   files.forEach((f) => form.append('files', f))
-  if (opts?.modelConfigId) form.append('model_config_id', opts.modelConfigId)
+  if (opts?.modelKey) form.append('model_key', opts.modelKey)
   if (opts?.thinking) form.append('thinking', opts.thinking)
   if (typeof opts?.outlineCount === 'number') form.append('outline_count', String(opts.outlineCount))
   if (opts?.generateImages) form.append('generate_images', 'true')
-  if (opts?.generateImages && opts.imageModelConfigId)
-    form.append('image_model_config_id', opts.imageModelConfigId)
+  if (opts?.generateImages && opts.imageModelKey)
+    form.append('image_model_key', opts.imageModelKey)
   return request<CourseCreateResult>({ url: '/courses', method: 'post', data: form })
 }
 

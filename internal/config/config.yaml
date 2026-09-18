@@ -36,12 +36,33 @@ crypto:
   encryption_key: "change-me-to-a-32-byte-encryption-key"
 
 model:
-  # 服务端统一兜底模型：用户未配置专属模型时使用（可通过 APP_MODEL_DEFAULT_* 覆盖）
-  default:
-    provider: openai
-    model: gpt-4o-mini
-    base_url: https://api.openai.com/v1
-    api_key: ""
+  # 平台全局可选模型清单：创建课程时下拉选择，支持配置多个。
+  # key 唯一标识（落库复用，务必稳定）；kind 为 llm | image；label 为空回退 model。
+  # default: true 的项作为该用途兜底模型（未选择课程模型时使用），每个 kind 至多一个；
+  # 配图（kind=image）通常不设默认，未显式选择则不生成配图。
+  options:
+    - key: gpt-4o-mini
+      kind: llm
+      label: GPT-4o mini
+      default: true
+      provider: openai
+      model: gpt-4o-mini
+      base_url: https://api.openai.com/v1
+      api_key: ""
+    - key: deepseek-chat
+      kind: llm
+      label: DeepSeek Chat
+      provider: deepseek
+      model: deepseek-chat
+      base_url: https://api.deepseek.com/v1
+      api_key: ""
+    - key: gpt-image-1
+      kind: image
+      label: GPT Image 1
+      provider: openai
+      model: gpt-image-1
+      base_url: https://api.openai.com/v1
+      api_key: ""
   # 非流式请求（大纲 / 环节内容生成）超时；思考模式 max 时自动放大 1.5 倍
   timeout: 300s
   # 流式请求（问答）超时；0 表示不限制，由上层 context 控制

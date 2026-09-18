@@ -250,8 +250,8 @@ func (s *DiscussionService) ListConversation(ctx context.Context, userID, course
 func (s *DiscussionService) resolveClient(ctx context.Context, userID types.ID, course *types.Course) (model.ToolStreamClient, string, error) {
 	var cfg model.ProviderConfig
 	var err error
-	if course.ModelConfigID != nil && *course.ModelConfigID != types.NilID {
-		cfg, err = s.modelCfgSvc.ResolveByID(ctx, userID, *course.ModelConfigID)
+	if course.ModelKey != "" {
+		cfg, err = s.modelCfgSvc.ResolveByKey(ctx, course.ModelKey)
 	} else {
 		cfg, err = s.modelCfgSvc.ResolveDefault(ctx, userID)
 	}

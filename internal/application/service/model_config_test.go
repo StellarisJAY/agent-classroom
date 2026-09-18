@@ -61,13 +61,22 @@ func newModelConfigSvc(repo types.ModelConfigRepo) types.ModelConfigService {
 		panic(err)
 	}
 	cfg := &config.Config{}
-	cfg.Model.Default = config.ModelDefaultConfig{
+	cfg.Model.Options = []config.ModelOptionConfig{defaultLLMOption()}
+	return NewModelConfigService(repo, fakeTM{}, cipher, cfg)
+}
+
+// defaultLLMOption 测试用带 default 标记的 LLM 选项，模拟配置文件兜底模型。
+func defaultLLMOption() config.ModelOptionConfig {
+	return config.ModelOptionConfig{
+		Key:      "fallback",
+		Kind:     types.ModelKindLLM,
+		Label:    "Fallback",
+		Default:  true,
 		Provider: "openai",
 		Model:    "fallback-model",
 		BaseURL:  "https://api.openai.com/v1",
 		APIKey:   "sk-fallback",
 	}
-	return NewModelConfigService(repo, fakeTM{}, cipher, cfg)
 }
 
 func TestModelConfigCreateEncryptsKey(t *testing.T) {
@@ -215,13 +224,15 @@ func TestModelConfigListDecryptsMask(t *testing.T) {
 	require.Equal(t, "sk-****5678", infos[0].APIKeyMasked)
 }
 
-func TestModelConfigResolveDefaultFromUserConfig(t *testing.T) {
+func TestModelConfigResolveDefaultIgnoresUserConfig(t *testing.T) {
 	cipher, _ := util.NewGCMCipher([]byte("0123456789abcdef0123456789abcdef"))
 	enc, err := cipher.Encrypt("sk-user-key")
 	require.NoError(t, err)
 	uid := types.NewID()
+	called := false
 	svc := newModelConfigSvc(&mockModelConfigRepo{
 		getDefault: func(types.ID) (*types.UserModelConfig, error) {
+			called = true
 			return &types.UserModelConfig{
 				UserID: uid, Provider: "deepseek", Model: "deepseek-chat",
 				BaseURL: "https://api.deepseek.com/v1", APIKeyEncrypted: enc,
@@ -230,22 +241,42 @@ func TestModelConfigResolveDefaultFromUserConfig(t *testing.T) {
 	})
 	pc, err := svc.ResolveDefault(context.Background(), uid)
 	require.NoError(t, err)
-	require.Equal(t, "deepseek", pc.Provider)
-	require.Equal(t, "sk-user-key", pc.APIKey)
-}
-
-func TestModelConfigResolveDefaultFallback(t *testing.T) {
-	uid := types.NewID()
-	svc := newModelConfigSvc(&mockModelConfigRepo{
-		getDefault: func(types.ID) (*types.UserModelConfig, error) {
-			return nil, types.ErrNotFound
-		},
-	})
-	pc, err := svc.ResolveDefault(context.Background(), uid)
-	require.NoError(t, err)
+	require.False(t, called, "平台已屏蔽用户模型配置，默认解析不应查询用户库")
 	require.Equal(t, "openai", pc.Provider)
 	require.Equal(t, "fallback-model", pc.Model)
 	require.Equal(t, "sk-fallback", pc.APIKey)
+}
+
+func TestModelConfigResolveByKey(t *testing.T) {
+	cipher, _ := util.NewGCMCipher([]byte("0123456789abcdef0123456789abcdef"))
+	svc := NewModelConfigService(&mockModelConfigRepo{}, fakeTM{}, cipher, &config.Config{
+		Model: config.ModelConfig{
+			Options: []config.ModelOptionConfig{
+				{Key: "opt-a", Kind: types.ModelKindLLM, Provider: "deepseek", Model: "deepseek-chat",
+					BaseURL: "https://api.deepseek.com/v1", APIKey: "sk-opt-a"},
+			},
+		},
+	})
+	pc, err := svc.ResolveByKey(context.Background(), "opt-a")
+	require.NoError(t, err)
+	require.Equal(t, "deepseek", pc.Provider)
+	require.Equal(t, "deepseek-chat", pc.Model)
+	require.Equal(t, "sk-opt-a", pc.APIKey)
+
+	// 清单下发不含密钥
+	opts := svc.Options(context.Background())
+	require.Len(t, opts, 1)
+	require.Equal(t, "opt-a", opts[0].Key)
+	require.Equal(t, types.ModelKindLLM, opts[0].Kind)
+
+	_, err = svc.ResolveByKey(context.Background(), "missing")
+	require.ErrorIs(t, err, types.ErrModelConfigNotFound)
+}
+
+func TestModelConfigResolveDefaultImageNoFallback(t *testing.T) {
+	svc := newModelConfigSvc(&mockModelConfigRepo{})
+	_, err := svc.ResolveDefaultByKind(context.Background(), types.NewID(), types.ModelKindImage)
+	require.ErrorIs(t, err, types.ErrNoModelConfig)
 }
 
 func TestModelConfigResolveByIDNotFound(t *testing.T) {

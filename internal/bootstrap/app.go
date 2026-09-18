@@ -88,7 +88,9 @@ func NewApp(cfg *config.Config) (*App, error) {
 
 	modelConfigRepo := repo.NewModelConfigRepo(db)
 	modelConfigSvc := service.NewModelConfigService(modelConfigRepo, store, cipher, cfg)
-	modelConfigHandler := handler.NewModelConfigHandler(modelConfigSvc)
+	// 用户模型配置页面/接口暂时屏蔽，仅保留全局模型清单接口。
+	// modelConfigHandler := handler.NewModelConfigHandler(modelConfigSvc)
+	modelHandler := handler.NewModelHandler(modelConfigSvc)
 
 	// 模型适配层注册表：默认回退 OpenAI 兼容实现，覆盖 openai/deepseek/bailian 等。
 	modelRegistry := model.NewRegistry()
@@ -135,7 +137,7 @@ func NewApp(cfg *config.Config) (*App, error) {
 	discussionHandler := handler.NewDiscussionHandler(discussionSvc)
 
 	e := gin.New()
-	router.Register(e, cfg, logger, authHandler, modelConfigHandler, courseHandler, sectionHandler, discussionHandler, objStorage)
+	router.Register(e, cfg, logger, authHandler, modelHandler, courseHandler, sectionHandler, discussionHandler, objStorage)
 
 	return &App{cfg: cfg, db: db, engine: e, logger: logger, modelRegistry: modelRegistry}, nil
 }
